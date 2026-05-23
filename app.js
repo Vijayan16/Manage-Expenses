@@ -751,17 +751,18 @@ function formatDate(dateStr) {
 
 // --- Planned Section Renderer ---
 function renderPlannedSection() {
-    const grid = document.getElementById('planned-cards-grid');
-    if (!grid) return;
-    grid.innerHTML = '';
+    const tbody = document.getElementById('planned-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
 
     if (state.plannedItems.length === 0) {
-        grid.innerHTML = `
-            <div class="planned-empty-state">
-                <i class="fa-solid fa-calendar-plus"></i>
-                <p>No planned costs yet.</p>
-                <span>Add things you'll need to pay soon &mdash; furniture, bills, fees, deposits and more.</span>
-            </div>`;
+        tbody.innerHTML = `
+            <tr class="planned-empty-row">
+                <td colspan="7" class="text-center" style="color: var(--text-muted); padding: 3rem 0;">
+                    <i class="fa-solid fa-calendar-plus" style="font-size: 1.8rem; margin-bottom: 0.5rem; display: block; opacity: 0.6; color: var(--color-saffron);"></i>
+                    No planned costs yet. Click "Plan Cost" to add items you need to pay soon.
+                </td>
+            </tr>`;
         return;
     }
 
@@ -774,9 +775,8 @@ function renderPlannedSection() {
     });
 
     sorted.forEach(item => {
-        const card = document.createElement('div');
-        card.className = 'planned-card';
-        card.dataset.id = item.id;
+        const tr = document.createElement('tr');
+        tr.dataset.id = item.id;
 
         const catColor = CATEGORY_COLORS[item.category] || 'var(--color-saffron)';
 
@@ -784,37 +784,58 @@ function renderPlannedSection() {
         const today = new Date().toISOString().split('T')[0];
         const isOverdue = item.targetDate && item.targetDate < today;
 
-        card.innerHTML = `
-            <div class="planned-card-header">
-                <span class="planned-card-title">${item.description}</span>
-                <span class="planned-card-amount">${formatCurrency(Number(item.estimatedAmount))}</span>
-            </div>
-            <div class="planned-card-meta">
-                <span class="planned-meta-pill pill-category" style="border-color:${catColor}30; color:${catColor}; background:${catColor}10;">
+        // Formatted Date
+        const dateHtml = item.targetDate ? `
+            <span class="planned-meta-pill pill-date" ${isOverdue ? 'style="background:rgba(244,63,94,0.08); color:#be123c; border-color:rgba(244,63,94,0.2); font-weight: 500;"' : ''}>
+                <i class="fa-solid ${isOverdue ? 'fa-triangle-exclamation' : 'fa-calendar-days'}"></i>
+                ${isOverdue ? 'Overdue: ' : ''}${formatDate(item.targetDate)}
+            </span>` : `<span style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">No Date</span>`;
+
+        // Event Badge
+        const eventHtml = item.event ? `
+            <span class="planned-meta-pill pill-event">
+                <i class="fa-solid fa-tag"></i> ${item.event}
+            </span>` : '<span style="color: var(--text-muted); font-size: 0.85rem;">—</span>';
+
+        // Title and notes
+        const titleHtml = `
+            <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">${item.description}</div>
+            ${item.notes ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;"><i class="fa-solid fa-note-sticky" style="margin-right: 0.25rem;"></i>${item.notes}</div>` : ''}
+        `;
+
+        tr.innerHTML = `
+            <td>${titleHtml}</td>
+            <td>
+                <span class="planned-meta-pill pill-category" style="border-color:${catColor}30; color:${catColor}; background:${catColor}10; font-weight: 500;">
                     <i class="fa-solid fa-tag"></i> ${item.category}
                 </span>
-                ${item.payee ? `<span class="planned-meta-pill"><i class="fa-solid fa-user"></i> ${item.payee}</span>` : ''}
-                ${item.targetDate ? `
-                    <span class="planned-meta-pill pill-date" ${isOverdue ? 'style="background:rgba(244,63,94,0.08); color:#be123c; border-color:rgba(244,63,94,0.2);"' : ''}>
-                        <i class="fa-solid ${isOverdue ? 'fa-triangle-exclamation' : 'fa-calendar-days'}"></i>
-                        ${isOverdue ? 'Overdue: ' : ''}${formatDate(item.targetDate)}
-                    </span>` : ''}
-                ${item.event ? `<span class="planned-meta-pill pill-event"><i class="fa-solid fa-tag"></i> ${item.event}</span>` : ''}
-            </div>
-            ${item.notes ? `<div class="planned-card-notes"><i class="fa-solid fa-note-sticky" style="margin-right:0.3rem; opacity:0.5;"></i>${item.notes}</div>` : ''}
-            <div class="planned-card-actions">
-                <button class="btn-convert" onclick="convertPlannedToExpense('${item.id}')" title="Mark as purchased/paid and convert to a real expense">
-                    <i class="fa-solid fa-circle-check"></i> Convert to Expense
-                </button>
-                <button class="btn-edit-planned" onclick="editPlannedItem('${item.id}')" title="Edit this planned item">
-                    <i class="fa-solid fa-pen"></i>
-                </button>
-                <button class="btn-delete-planned" onclick="deletePlannedItem('${item.id}')" title="Delete planned item">
-                    <i class="fa-solid fa-trash-can"></i>
-                </button>
-            </div>
+            </td>
+            <td>
+                ${item.payee ? `
+                    <span style="font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-primary);">
+                        <i class="fa-solid fa-user" style="opacity: 0.5; font-size: 0.8rem;"></i> ${item.payee}
+                    </span>` : '<span style="color: var(--text-muted); font-size: 0.85rem;">—</span>'}
+            </td>
+            <td>${dateHtml}</td>
+            <td>${eventHtml}</td>
+            <td class="text-right" style="font-weight: 700; color: var(--color-saffron); font-size: 1rem;">
+                ${formatCurrency(Number(item.estimatedAmount))}
+            </td>
+            <td class="text-center">
+                <div style="display: inline-flex; gap: 0.4rem; justify-content: center;">
+                    <button class="btn-convert" onclick="convertPlannedToExpense('${item.id}')" title="Mark as purchased/paid and convert to a real expense" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 6px;">
+                        <i class="fa-solid fa-circle-check"></i> Convert
+                    </button>
+                    <button class="btn-edit-planned" onclick="editPlannedItem('${item.id}')" title="Edit this planned item" style="padding: 0.35rem 0.55rem; font-size: 0.8rem; border-radius: 6px; background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.06);">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="btn-delete-planned" onclick="deletePlannedItem('${item.id}')" title="Delete planned item" style="padding: 0.35rem 0.55rem; font-size: 0.8rem; border-radius: 6px; background: rgba(244,63,94,0.05); border: 1px solid rgba(244,63,94,0.15); color: #f43f5e;">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </td>
         `;
-        grid.appendChild(card);
+        tbody.appendChild(tr);
     });
 }
 
@@ -879,9 +900,9 @@ window.editPlannedItem = function(id) {
 // --- Delete Planned Item ---
 window.deletePlannedItem = async function(id) {
     if (!confirm('Remove this planned cost?')) return;
-    const card = document.querySelector(`.planned-card[data-id="${id}"]`);
-    if (card) {
-        card.classList.add('removing');
+    const itemEl = document.querySelector(`.planned-card[data-id="${id}"], tr[data-id="${id}"]`);
+    if (itemEl) {
+        itemEl.classList.add('removing');
         await new Promise(r => setTimeout(r, 300));
     }
     state.plannedItems = state.plannedItems.filter(p => p.id !== id);

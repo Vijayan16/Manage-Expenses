@@ -1339,6 +1339,19 @@ textarea {
     }
 }
 
+/* Planned table row remove animation */
+tr.removing {
+    animation: tr-fade-out 0.3s ease forwards;
+}
+
+@keyframes tr-fade-out {
+    to {
+        opacity: 0;
+        transform: translateY(-4px);
+        background-color: rgba(244, 63, 94, 0.05);
+    }
+}
+
 /* Planned empty state */
 .planned-empty-state {
     display: flex;
