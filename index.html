@@ -36,6 +36,15 @@
             </nav>
             
             <div class="sidebar-footer">
+                <div class="user-profile-badge" id="user-profile" style="display: none;">
+                    <div class="user-info">
+                        <i class="fa-solid fa-circle-user profile-icon"></i>
+                        <span class="user-email" id="user-email-display">user@example.com</span>
+                    </div>
+                    <button class="btn btn-logout" id="btn-logout" title="Log Out">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
                 <button class="btn btn-settings" id="btn-settings-trigger">
                     <i class="fa-solid fa-gear"></i> Settings
                 </button>
@@ -300,7 +309,7 @@
             </div>
             <div class="modal-info-box">
                 <i class="fa-solid fa-circle-info"></i>
-                <p>Sync your dashboard with your Supabase database. It reads and writes data automatically to your Supabase tables (<code>expenses</code>, <code>deposits</code>, and <code>settings</code>) keeping your data up-to-date across devices.</p>
+                <p>Sync your dashboard with your Supabase database securely in the background. Simply sign in to your account, select "Supabase Sync", and your expenses will sync across all devices.</p>
             </div>
             <form id="form-settings">
                 <div class="form-group">
@@ -325,29 +334,9 @@
                         <option value="supabase" selected>Supabase Sync</option>
                     </select>
                 </div>
-                
-                <div id="supabase-config-fields" style="display: none;">
-                    <div class="form-group">
-                        <label for="sb-url">Supabase API URL</label>
-                        <input type="text" id="sb-url" placeholder="https://your-project.supabase.co" value="https://axillvetqfnoikrzgdjt.supabase.co">
-                    </div>
-                    <div class="form-group">
-                        <label for="sb-key">Supabase API Key (Anon Key)</label>
-                        <div style="position: relative; display: flex; align-items: center;">
-                            <input type="password" id="sb-key" placeholder="eyJhbGciOi..." autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
-                            <button type="button" id="btn-toggle-key" style="position: absolute; right: 0.75rem; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
-                                <i class="fa-solid fa-eye"></i>
-                            </button>
-                        </div>
-                        <small class="form-help-text">Your public anonymous API key (anon key) for direct database sync.</small>
-                    </div>
-                </div>
 
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary btn-cancel">Cancel</button>
-                    <button type="button" class="btn btn-info" id="btn-test-sync" style="display: none;">
-                        <i class="fa-solid fa-cloud-arrow-down"></i> Test Sync
-                    </button>
                     <button type="submit" class="btn btn-primary">Save Settings</button>
                 </div>
             </form>
@@ -366,6 +355,39 @@
                     <input type="file" id="import-data-file" accept=".json" style="display: none;">
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Authentication Screen Overlay -->
+    <div class="auth-overlay" id="auth-screen" style="display: none;">
+        <div class="auth-card animate-scale-up">
+            <div class="auth-header">
+                <i class="fa-solid fa-compass-drafting auth-logo-icon"></i>
+                <h2>Welcome to NovaSpend</h2>
+                <p>Sync your expense tracker securely in the background</p>
+            </div>
+            
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab active" id="tab-login">Sign In</button>
+                <button type="button" class="auth-tab" id="tab-signup">Register</button>
+            </div>
+
+            <form id="form-auth">
+                <div class="form-group">
+                    <label for="auth-email">Email Address</label>
+                    <input type="email" id="auth-email" placeholder="name@example.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="auth-password">Password</label>
+                    <div style="position: relative; display: flex; align-items: center;">
+                        <input type="password" id="auth-password" placeholder="••••••••" required autocomplete="current-password" style="padding-right: 2.5rem; width: 100%;">
+                        <button type="button" id="btn-toggle-auth-password" style="position: absolute; right: 0.75rem; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-accent btn-auth-submit" id="btn-auth-action">Sign In</button>
+            </form>
         </div>
     </div>
 

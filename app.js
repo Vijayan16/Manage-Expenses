@@ -14,6 +14,10 @@ const CATEGORY_COLORS = {
     'Other': '#6b7280'              // Gray
 };
 
+// --- Supabase Background Credentials ---
+const SUPABASE_URL = 'https://axillvetqfnoikrzgdjt.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4aWxsdmV0cWZub2lrcnpnZGp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMDgxNTQsImV4cCI6MjA4NjU4NDE1NH0.L4S8RqVksY8uRuQy_E6ANpuzq5cjFz_Grm8mNte9FGI';
+
 // --- Application State ---
 let state = {
     currencyCode: 'INR',
@@ -21,10 +25,9 @@ let state = {
     deposits: [],
     needRemoteInit: false,
     supabaseConfig: {
-        mode: 'supabase',
-        url: 'https://axillvetqfnoikrzgdjt.supabase.co',
-        anonKey: ''
-    }
+        mode: 'supabase'
+    },
+    userSession: null
 };
 
 // --- Currency Formatting Utility ---
@@ -46,26 +49,33 @@ let trendChartInstance = null;
 // --- Initialize App ---
 document.addEventListener('DOMContentLoaded', () => {
     initDateDisplay();
+    loadAuthSession();
     loadSupabaseConfig();
+    checkAuthRouting();
     
     // Attempt to load data from configured storage
-    if (state.supabaseConfig.mode === 'supabase' && isSupabaseConfigValid()) {
-        updateSyncStatus('syncing', 'Syncing with Supabase...');
-        pullDataFromSupabase()
-            .then(success => {
-                if (success) {
-                    showToast('Data synced with Supabase!', 'success');
-                } else {
-                    // Fallback to local
+    if (state.supabaseConfig.mode === 'supabase') {
+        if (state.userSession) {
+            updateSyncStatus('syncing', 'Syncing with Supabase...');
+            pullDataFromSupabase()
+                .then(success => {
+                    if (success) {
+                        showToast('Data synced with Supabase!', 'success');
+                    } else {
+                        // Fallback to local
+                        loadLocalData();
+                        showToast('Failed to pull from Supabase. Using offline data.', 'warning');
+                    }
+                    renderDashboard();
+                })
+                .catch(err => {
                     loadLocalData();
-                    showToast('Failed to pull from Supabase. Using offline data.', 'warning');
-                }
-                renderDashboard();
-            })
-            .catch(err => {
-                loadLocalData();
-                renderDashboard();
-            });
+                    renderDashboard();
+                });
+        } else {
+            loadLocalData();
+            renderDashboard();
+        }
     } else {
         loadLocalData();
         renderDashboard();
@@ -119,39 +129,64 @@ function saveLocalData() {
     }));
 }
 
-function loadSupabaseConfig() {
-    const localConfig = localStorage.getItem('novaspend_v2_sb_config');
-    if (localConfig) {
+// --- Authentication State Helpers ---
+function loadAuthSession() {
+    const session = localStorage.getItem('novaspend_auth_session');
+    if (session) {
         try {
-            state.supabaseConfig = { ...state.supabaseConfig, ...JSON.parse(localConfig) };
+            state.userSession = JSON.parse(session);
         } catch (e) {
-            console.error('Failed to load Supabase configuration', e);
+            console.error('Failed to parse auth session', e);
         }
     }
-    
-    // Always populate config form inputs with state values (including our defaults)
-    const syncModeEl = document.getElementById('sync-mode');
-    const sbUrlEl = document.getElementById('sb-url');
-    const sbKeyEl = document.getElementById('sb-key');
+}
 
-    if (syncModeEl) syncModeEl.value = state.supabaseConfig.mode;
-    if (sbUrlEl) sbUrlEl.value = state.supabaseConfig.url;
-    if (sbKeyEl) sbKeyEl.value = state.supabaseConfig.anonKey;
+function saveAuthSession(sessionData) {
+    state.userSession = sessionData;
+    localStorage.setItem('novaspend_auth_session', JSON.stringify(sessionData));
+}
+
+function clearAuthSession() {
+    state.userSession = null;
+    localStorage.removeItem('novaspend_auth_session');
+}
+
+function checkAuthRouting() {
+    const authScreen = document.getElementById('auth-screen');
+    const profileEl = document.getElementById('user-profile');
+    const emailDisplay = document.getElementById('user-email-display');
+
+    if (state.supabaseConfig.mode === 'supabase' && !state.userSession) {
+        if (authScreen) authScreen.style.display = 'flex';
+        if (profileEl) profileEl.style.display = 'none';
+    } else {
+        if (authScreen) authScreen.style.display = 'none';
+        
+        if (state.supabaseConfig.mode === 'supabase' && state.userSession) {
+            if (profileEl) profileEl.style.display = 'flex';
+            if (emailDisplay) emailDisplay.textContent = state.userSession.email;
+        } else {
+            if (profileEl) profileEl.style.display = 'none';
+        }
+    }
+}
+
+function loadSupabaseConfig() {
+    const mode = localStorage.getItem('novaspend_v2_sb_mode') || 'supabase';
+    state.supabaseConfig.mode = mode;
     
-    toggleSupabaseConfigVisibility(state.supabaseConfig.mode);
+    const syncModeEl = document.getElementById('sync-mode');
+    if (syncModeEl) syncModeEl.value = mode;
+    
+    toggleSupabaseConfigVisibility(mode);
 }
 
 function saveSupabaseConfig() {
-    localStorage.setItem('novaspend_v2_sb_config', JSON.stringify({
-        mode: state.supabaseConfig.mode,
-        url: state.supabaseConfig.url,
-        anonKey: state.supabaseConfig.anonKey
-    }));
+    localStorage.setItem('novaspend_v2_sb_mode', state.supabaseConfig.mode);
 }
 
 function isSupabaseConfigValid() {
-    const cfg = state.supabaseConfig;
-    return cfg.url && cfg.anonKey;
+    return true; // Background credentials are always valid
 }
 
 function updateEventFilters() {
@@ -766,27 +801,128 @@ function saveAndSyncData(actionLabel = 'Data update') {
     return Promise.resolve(true);
 }
 
-// --- Supabase API Client ---
+// --- Supabase API Client & Authentication ---
+async function signIn(email, password) {
+    const url = `${SUPABASE_URL}/auth/v1/token?grant_type=password`;
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+    };
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error_description || errData.message || 'Login failed');
+        }
+        
+        const data = await response.json();
+        const session = {
+            email: data.user.email,
+            id: data.user.id,
+            accessToken: data.access_token
+        };
+        saveAuthSession(session);
+        showToast('Successfully signed in!', 'success');
+        checkAuthRouting();
+        
+        // Sync and pull data immediately
+        updateSyncStatus('syncing', 'Syncing remote data...');
+        await pullDataFromSupabase();
+        renderDashboard();
+        return true;
+    } catch (e) {
+        console.error(e);
+        showToast(`Login Error: ${e.message}`, 'error');
+        return false;
+    }
+}
+
+async function signUp(email, password) {
+    const url = `${SUPABASE_URL}/auth/v1/signup`;
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+    };
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ email, password })
+        });
+        
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.message || 'Registration failed');
+        }
+        
+        showToast('Registration successful! Please sign in.', 'success');
+        // Switch tab to login automatically
+        const tabLogin = document.getElementById('tab-login');
+        if (tabLogin) tabLogin.click();
+        return true;
+    } catch (e) {
+        console.error(e);
+        showToast(`Signup Error: ${e.message}`, 'error');
+        return false;
+    }
+}
+
+async function signOut() {
+    if (!state.userSession) return;
+    
+    const url = `${SUPABASE_URL}/auth/v1/logout`;
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`
+    };
+    
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers
+        });
+    } catch (e) {
+        console.error('Logout request failed:', e);
+    }
+    
+    clearAuthSession();
+    showToast('Signed out successfully.', 'info');
+    
+    // Clear local data for security
+    state.expenses = [];
+    state.deposits = [];
+    saveLocalData();
+    
+    checkAuthRouting();
+    renderDashboard();
+}
+
 async function pullDataFromSupabase() {
-    const cfg = state.supabaseConfig;
-    if (!cfg.url || !cfg.anonKey) return false;
-    const baseUrl = cfg.url.replace(/\/+$/, '');
+    if (!state.userSession) return false;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
     
     const headers = {
-        'apikey': cfg.anonKey,
-        'Authorization': `Bearer ${cfg.anonKey}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`,
         'Accept': 'application/json'
     };
 
     try {
-        const [expensesRes, depositsRes, settingsRes] = await Promise.all([
+        // Fetch expenses & deposits in parallel
+        const [expensesRes, depositsRes] = await Promise.all([
             fetch(`${baseUrl}/rest/v1/expenses`, { method: 'GET', headers }),
-            fetch(`${baseUrl}/rest/v1/deposits`, { method: 'GET', headers }),
-            fetch(`${baseUrl}/rest/v1/settings`, { method: 'GET', headers })
+            fetch(`${baseUrl}/rest/v1/deposits`, { method: 'GET', headers })
         ]);
 
-        if (!expensesRes.ok || !depositsRes.ok || !settingsRes.ok) {
-            let errorMsg = `Expenses: ${expensesRes.status}, Deposits: ${depositsRes.status}, Settings: ${settingsRes.status}`;
+        if (!expensesRes.ok || !depositsRes.ok) {
+            let errorMsg = `Expenses: ${expensesRes.status}, Deposits: ${depositsRes.status}`;
             updateSyncStatus('rose', 'Pull connection failed');
             showToast(`Connection Failed: ${errorMsg}`, 'error');
             return false;
@@ -794,9 +930,8 @@ async function pullDataFromSupabase() {
 
         const dbExpenses = await expensesRes.json();
         const dbDeposits = await depositsRes.json();
-        const dbSettings = await settingsRes.json();
 
-        // Map from DB columns to JS state structure
+        // Convert db format to state format
         const expenses = dbExpenses.map(item => ({
             id: item.id,
             type: 'expense',
@@ -819,12 +954,21 @@ async function pullDataFromSupabase() {
             event: item.event || ''
         }));
 
-        const currencySetting = dbSettings.find(s => s.key === 'currencyCode');
-        if (currencySetting) {
-            state.currencyCode = currencySetting.value;
+        // Fetch settings if table exists (optional, catch error so it doesn't block)
+        try {
+            const settingsRes = await fetch(`${baseUrl}/rest/v1/settings`, { method: 'GET', headers });
+            if (settingsRes.ok) {
+                const dbSettings = await settingsRes.json();
+                const currencySetting = dbSettings.find(s => s.key === 'currencyCode');
+                if (currencySetting) {
+                    state.currencyCode = currencySetting.value;
+                }
+            }
+        } catch(e) {
+            console.warn('Failed to pull settings from Supabase:', e);
         }
 
-        // Merge logic: Merge remote database data with current local data
+        // Merge strategy: Smart Union by unique ID
         state.expenses = mergeTransactionLists(state.expenses, expenses);
         state.deposits = mergeTransactionLists(state.deposits, deposits);
 
@@ -840,18 +984,17 @@ async function pullDataFromSupabase() {
 }
 
 async function pushDataToSupabase() {
-    const cfg = state.supabaseConfig;
-    if (!cfg.url || !cfg.anonKey) return false;
-    const baseUrl = cfg.url.replace(/\/+$/, '');
+    if (!state.userSession) return false;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
 
     const headers = {
-        'apikey': cfg.anonKey,
-        'Authorization': `Bearer ${cfg.anonKey}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`,
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates' // PostgREST upsert flag
     };
 
-    // Prepare arrays matching database schema (exclude empty rows to avoid PostgREST issues)
+    // Prepare arrays matching database schema
     const dbExpenses = state.expenses.map(item => ({
         id: item.id,
         amount: item.amount,
@@ -861,7 +1004,8 @@ async function pushDataToSupabase() {
         date: item.date,
         status: item.status,
         notes: item.notes || null,
-        event: item.event || null
+        event: item.event || null,
+        user_id: state.userSession.id
     }));
 
     const dbDeposits = state.deposits.map(item => ({
@@ -869,7 +1013,8 @@ async function pushDataToSupabase() {
         amount: item.amount,
         source: item.source,
         date: item.date,
-        event: item.event || null
+        event: item.event || null,
+        user_id: state.userSession.id
     }));
 
     const dbSettings = [
@@ -877,8 +1022,8 @@ async function pushDataToSupabase() {
     ];
 
     try {
-        // Upsert all tables (POST is upsert when Prefer: resolution=merge-duplicates is set)
-        const [expensesRes, depositsRes, settingsRes] = await Promise.all([
+        // Upsert both tables (POST is upsert when Prefer: resolution=merge-duplicates is set)
+        const [expensesRes, depositsRes] = await Promise.all([
             dbExpenses.length > 0 ? fetch(`${baseUrl}/rest/v1/expenses`, {
                 method: 'POST',
                 headers,
@@ -888,20 +1033,26 @@ async function pushDataToSupabase() {
                 method: 'POST',
                 headers,
                 body: JSON.stringify(dbDeposits)
-            }) : Promise.resolve({ ok: true }),
-            fetch(`${baseUrl}/rest/v1/settings`, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(dbSettings)
-            })
+            }) : Promise.resolve({ ok: true })
         ]);
 
-        if (!expensesRes.ok || !depositsRes.ok || !settingsRes.ok) {
-            let errorMsg = `Expenses: ${expensesRes.status || 'N/A'}, Deposits: ${depositsRes.status || 'N/A'}, Settings: ${settingsRes.status || 'N/A'}`;
+        if (!expensesRes.ok || !depositsRes.ok) {
+            let errorMsg = `Expenses: ${expensesRes.status || 'N/A'}, Deposits: ${depositsRes.status || 'N/A'}`;
             console.error('Failed to upload to Supabase:', errorMsg);
             updateSyncStatus('rose', 'Push upload failed');
             showToast(`Upload Failed: ${errorMsg}`, 'error');
             return false;
+        }
+
+        // Try pushing settings, catch error so it doesn't block transactions
+        try {
+            await fetch(`${baseUrl}/rest/v1/settings`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(dbSettings)
+            });
+        } catch(e) {
+            console.warn('Failed to push settings to Supabase:', e);
         }
 
         updateSyncStatus('green', 'Synced with Supabase');
@@ -915,13 +1066,12 @@ async function pushDataToSupabase() {
 }
 
 async function deleteFromSupabase(id, type) {
-    const cfg = state.supabaseConfig;
-    if (cfg.mode !== 'supabase' || !isSupabaseConfigValid()) return;
+    if (state.supabaseConfig.mode !== 'supabase' || !state.userSession) return;
 
-    const baseUrl = cfg.url.replace(/\/+$/, '');
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
     const headers = {
-        'apikey': cfg.anonKey,
-        'Authorization': `Bearer ${cfg.anonKey}`
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`
     };
 
     const table = type === 'deposit' ? 'deposits' : 'expenses';
@@ -1055,19 +1205,8 @@ function setupEventListeners() {
         const mode = document.getElementById('sync-mode').value;
         const oldMode = state.supabaseConfig.mode;
         
-        const urlInput = document.getElementById('sb-url').value.trim();
-        const keyInput = document.getElementById('sb-key').value.trim();
-
-        const configChanged = 
-            mode !== oldMode ||
-            urlInput !== state.supabaseConfig.url ||
-            keyInput !== state.supabaseConfig.anonKey;
-
+        const configChanged = mode !== oldMode;
         state.supabaseConfig.mode = mode;
-        if (mode === 'supabase') {
-            state.supabaseConfig.url = urlInput;
-            state.supabaseConfig.anonKey = keyInput;
-        }
         
         saveSupabaseConfig();
         closeAllModals();
@@ -1079,8 +1218,9 @@ function setupEventListeners() {
 
         // 2. Handle Syncing
         if (mode === 'supabase') {
-            if (isSupabaseConfigValid()) {
-                if (configChanged) {
+            checkAuthRouting();
+            if (configChanged) {
+                if (state.userSession) {
                     updateSyncStatus('syncing', 'Syncing remote data...');
                     pullDataFromSupabase()
                         .then(success => {
@@ -1088,16 +1228,12 @@ function setupEventListeners() {
                                 showToast('Supabase Sync enabled and data pulled!', 'success');
                                 saveAndSyncData('Settings sync');
                             } else {
-                                showToast('Failed to connect to Supabase. Review settings.', 'error');
+                                showToast('Failed to connect to Supabase.', 'error');
                             }
                             renderDashboard();
                         });
-                } else {
-                    renderDashboard();
                 }
             } else {
-                showToast('Supabase settings are incomplete!', 'warning');
-                updateSyncStatus('amber', 'Config Incomplete');
                 renderDashboard();
             }
         } else {
@@ -1107,6 +1243,7 @@ function setupEventListeners() {
                 renderDashboard();
             }
             updateSyncStatus('grey', 'Local Storage Only');
+            checkAuthRouting();
             if (oldMode === 'supabase') {
                 showToast('Switched to Offline Local Storage.', 'info');
             }
@@ -1118,53 +1255,84 @@ function setupEventListeners() {
         toggleSupabaseConfigVisibility(e.target.value);
     });
 
-    // Test Supabase Connection button
-    document.getElementById('btn-test-sync').addEventListener('click', () => {
-        const url = document.getElementById('sb-url').value.trim();
-        const key = document.getElementById('sb-key').value.trim();
-
-        if (!url || !key) {
-            showToast('Please fill Supabase URL and Anon Key first.', 'warning');
-            return;
+    // --- Authentication Event Listeners ---
+    
+    // Toggle Login/Signup tabs
+    const tabLogin = document.getElementById('tab-login');
+    const tabSignup = document.getElementById('tab-signup');
+    const formAuth = document.getElementById('form-auth');
+    const btnAuthAction = document.getElementById('btn-auth-action');
+    
+    let authMode = 'login'; // 'login' or 'signup'
+    
+    function switchAuthTab(newMode) {
+        authMode = newMode;
+        if (newMode === 'login') {
+            tabLogin.classList.add('active');
+            tabSignup.classList.remove('active');
+            btnAuthAction.textContent = 'Sign In';
+        } else {
+            tabSignup.classList.add('active');
+            tabLogin.classList.remove('active');
+            btnAuthAction.textContent = 'Register';
         }
+    }
+    
+    if (tabLogin) {
+        tabLogin.addEventListener('click', () => switchAuthTab('login'));
+    }
+    if (tabSignup) {
+        tabSignup.addEventListener('click', () => switchAuthTab('signup'));
+    }
+    
+    // Auth Form submit
+    if (formAuth) {
+        formAuth.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value;
+            
+            btnAuthAction.disabled = true;
+            btnAuthAction.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...';
+            
+            let success = false;
+            if (authMode === 'login') {
+                success = await signIn(email, password);
+            } else {
+                success = await signUp(email, password);
+            }
+            
+            btnAuthAction.disabled = false;
+            btnAuthAction.textContent = authMode === 'login' ? 'Sign In' : 'Register';
+            
+            if (success && authMode === 'login') {
+                formAuth.reset();
+            }
+        });
+    }
 
-        // Test configuration temporarily
-        const originalConfig = { ...state.supabaseConfig };
-        state.supabaseConfig = { mode: 'supabase', url, anonKey: key };
-
-        showToast('Testing connection...', 'info');
-        
-        pullDataFromSupabase()
-            .then(success => {
-                if (success) {
-                    showToast('Connection Successful! Data pulled.', 'success');
-                    renderDashboard();
-                } else {
-                    showToast('Connection Failed. Please check URL or API Key.', 'error');
-                    // Restore original
-                    state.supabaseConfig = originalConfig;
-                }
-            })
-            .catch(err => {
-                console.error(err);
-                showToast('Connection error.', 'error');
-                // Restore original
-                state.supabaseConfig = originalConfig;
-            });
-    });
-
-    // Toggle key field visibility (show/hide password)
-    const btnToggleKey = document.getElementById('btn-toggle-key');
-    if (btnToggleKey) {
-        btnToggleKey.addEventListener('click', () => {
-            const keyInput = document.getElementById('sb-key');
-            const icon = btnToggleKey.querySelector('i');
-            if (keyInput.type === 'password') {
-                keyInput.type = 'text';
+    // Toggle auth password visibility
+    const btnToggleAuthPassword = document.getElementById('btn-toggle-auth-password');
+    if (btnToggleAuthPassword) {
+        btnToggleAuthPassword.addEventListener('click', () => {
+            const passwordInput = document.getElementById('auth-password');
+            const icon = btnToggleAuthPassword.querySelector('i');
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
                 icon.className = 'fa-solid fa-eye-slash';
             } else {
-                keyInput.type = 'password';
+                passwordInput.type = 'password';
                 icon.className = 'fa-solid fa-eye';
+            }
+        });
+    }
+
+    // Log Out button
+    const btnLogout = document.getElementById('btn-logout');
+    if (btnLogout) {
+        btnLogout.addEventListener('click', () => {
+            if (confirm('Are you sure you want to log out and clear local cache data?')) {
+                signOut();
             }
         });
     }
@@ -1270,12 +1438,11 @@ function toggleSupabaseConfigVisibility(mode) {
     const fields = document.getElementById('supabase-config-fields');
     const testBtn = document.getElementById('btn-test-sync');
     
-    if (mode === 'supabase') {
-        fields.style.display = 'block';
-        testBtn.style.display = 'inline-flex';
-    } else {
-        fields.style.display = 'none';
-        testBtn.style.display = 'none';
+    if (fields) {
+        fields.style.display = mode === 'supabase' ? 'block' : 'none';
+    }
+    if (testBtn) {
+        testBtn.style.display = mode === 'supabase' ? 'inline-flex' : 'none';
     }
 }
 
