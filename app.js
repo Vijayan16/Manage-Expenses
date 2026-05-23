@@ -23,6 +23,7 @@ let state = {
     currencyCode: 'INR',
     expenses: [],
     deposits: [],
+    plannedItems: [],
     needRemoteInit: false,
     supabaseConfig: {
         mode: 'supabase'
@@ -106,6 +107,7 @@ function loadLocalData() {
             const parsed = JSON.parse(localData);
             state.expenses = parsed.expenses || [];
             state.deposits = parsed.deposits || [];
+            state.plannedItems = parsed.plannedItems || [];
             state.currencyCode = parsed.currencyCode || 'INR';
         } catch (e) {
             console.error('Failed to parse local storage data', e);
@@ -119,6 +121,7 @@ function loadLocalData() {
 function loadMockData() {
     state.expenses = [...mockInitialData.expenses];
     state.deposits = [...mockInitialData.deposits];
+    state.plannedItems = [];
     saveLocalData();
 }
 
@@ -126,7 +129,8 @@ function saveLocalData() {
     localStorage.setItem('novaspend_v2_data', JSON.stringify({
         currencyCode: state.currencyCode || 'INR',
         expenses: state.expenses,
-        deposits: state.deposits
+        deposits: state.deposits,
+        plannedItems: state.plannedItems
     }));
 }
 
@@ -252,6 +256,7 @@ function renderDashboard() {
     renderCategoryBreakdown();
     renderCharts();
     renderLedger();
+    renderPlannedSection();
 }
 
 function calculateAndRenderMetrics() {
@@ -307,6 +312,11 @@ function calculateAndRenderMetrics() {
     
     const outstandingCount = filteredExpenses.filter(e => Number(e.amount) - Number(e.amountPaid || 0) > 0).length;
     document.getElementById('val-outstanding-count').textContent = `${outstandingCount} items pending`;
+
+    // Planned budget card
+    const plannedTotal = state.plannedItems.reduce((sum, p) => sum + Number(p.estimatedAmount), 0);
+    document.getElementById('val-planned-total').textContent = formatCurrency(plannedTotal);
+    document.getElementById('val-planned-count').textContent = `${state.plannedItems.length} planned item${state.plannedItems.length !== 1 ? 's' : ''}`;
 }
 
 function renderCategoryBreakdown() {
@@ -739,6 +749,149 @@ function formatDate(dateStr) {
     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+// --- Planned Section Renderer ---
+function renderPlannedSection() {
+    const grid = document.getElementById('planned-cards-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    if (state.plannedItems.length === 0) {
+        grid.innerHTML = `
+            <div class="planned-empty-state">
+                <i class="fa-solid fa-calendar-plus"></i>
+                <p>No planned costs yet.</p>
+                <span>Add things you'll need to pay soon &mdash; furniture, bills, fees, deposits and more.</span>
+            </div>`;
+        return;
+    }
+
+    // Sort by target date ascending (undated last)
+    const sorted = [...state.plannedItems].sort((a, b) => {
+        if (!a.targetDate && !b.targetDate) return 0;
+        if (!a.targetDate) return 1;
+        if (!b.targetDate) return -1;
+        return a.targetDate.localeCompare(b.targetDate);
+    });
+
+    sorted.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'planned-card';
+        card.dataset.id = item.id;
+
+        const catColor = CATEGORY_COLORS[item.category] || 'var(--color-saffron)';
+
+        // Check if overdue
+        const today = new Date().toISOString().split('T')[0];
+        const isOverdue = item.targetDate && item.targetDate < today;
+
+        card.innerHTML = `
+            <div class="planned-card-header">
+                <span class="planned-card-title">${item.description}</span>
+                <span class="planned-card-amount">${formatCurrency(Number(item.estimatedAmount))}</span>
+            </div>
+            <div class="planned-card-meta">
+                <span class="planned-meta-pill pill-category" style="border-color:${catColor}30; color:${catColor}; background:${catColor}10;">
+                    <i class="fa-solid fa-tag"></i> ${item.category}
+                </span>
+                ${item.payee ? `<span class="planned-meta-pill"><i class="fa-solid fa-user"></i> ${item.payee}</span>` : ''}
+                ${item.targetDate ? `
+                    <span class="planned-meta-pill pill-date" ${isOverdue ? 'style="background:rgba(244,63,94,0.08); color:#be123c; border-color:rgba(244,63,94,0.2);"' : ''}>
+                        <i class="fa-solid ${isOverdue ? 'fa-triangle-exclamation' : 'fa-calendar-days'}"></i>
+                        ${isOverdue ? 'Overdue: ' : ''}${formatDate(item.targetDate)}
+                    </span>` : ''}
+                ${item.event ? `<span class="planned-meta-pill pill-event"><i class="fa-solid fa-tag"></i> ${item.event}</span>` : ''}
+            </div>
+            ${item.notes ? `<div class="planned-card-notes"><i class="fa-solid fa-note-sticky" style="margin-right:0.3rem; opacity:0.5;"></i>${item.notes}</div>` : ''}
+            <div class="planned-card-actions">
+                <button class="btn-convert" onclick="convertPlannedToExpense('${item.id}')" title="Mark as purchased/paid and convert to a real expense">
+                    <i class="fa-solid fa-circle-check"></i> Convert to Expense
+                </button>
+                <button class="btn-edit-planned" onclick="editPlannedItem('${item.id}')" title="Edit this planned item">
+                    <i class="fa-solid fa-pen"></i>
+                </button>
+                <button class="btn-delete-planned" onclick="deletePlannedItem('${item.id}')" title="Delete planned item">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        `;
+        grid.appendChild(card);
+    });
+}
+
+// --- Convert Planned Item to Expense ---
+window.convertPlannedToExpense = function(id) {
+    const item = state.plannedItems.find(p => p.id === id);
+    if (!item) return;
+
+    // Pre-fill the expense modal with planned item data
+    const modalExpense = document.getElementById('modal-add-expense');
+    if (!modalExpense) return;
+
+    // Set a flag so we know which planned item to remove after saving
+    modalExpense.dataset.convertingFromPlannedId = id;
+
+    // Pre-fill fields
+    document.getElementById('expense-amount').value = item.estimatedAmount;
+    document.getElementById('expense-amount-paid').value = item.estimatedAmount;
+    delete document.getElementById('expense-amount-paid').dataset.userEdited;
+    document.getElementById('expense-category').value = item.category;
+    document.getElementById('expense-payee').value = item.payee || item.description;
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('expense-date').value = today;
+    document.getElementById('expense-event').value = item.event || '';
+    document.getElementById('expense-notes').value = item.notes ? `[From Plan] ${item.notes}` : `[From Plan] ${item.description}`;
+
+    // Update modal heading to indicate conversion
+    const modalH2 = modalExpense.querySelector('.modal-header h2');
+    if (modalH2) modalH2.innerHTML = '<i class="fa-solid fa-circle-check" style="color:var(--color-emerald); margin-right:0.5rem;"></i>Convert to Expense';
+
+    openModal(modalExpense);
+    showToast(`Confirm the actual cost for "${item.description}" then click Log Expense.`, 'info');
+};
+
+// --- Edit Planned Item ---
+window.editPlannedItem = function(id) {
+    const item = state.plannedItems.find(p => p.id === id);
+    if (!item) return;
+
+    const modal = document.getElementById('modal-add-planned');
+    if (!modal) return;
+
+    // Mark the modal as editing
+    modal.dataset.editingId = id;
+
+    // Pre-fill form
+    document.getElementById('planned-description').value = item.description;
+    document.getElementById('planned-category').value = item.category;
+    document.getElementById('planned-payee').value = item.payee || '';
+    document.getElementById('planned-amount').value = item.estimatedAmount;
+    document.getElementById('planned-target-date').value = item.targetDate || '';
+    document.getElementById('planned-event').value = item.event || '';
+    document.getElementById('planned-notes').value = item.notes || '';
+
+    // Update modal header
+    const modalH2 = modal.querySelector('.modal-header h2');
+    if (modalH2) modalH2.innerHTML = '<i class="fa-solid fa-pen" style="color:var(--color-saffron); margin-right:0.5rem;"></i>Edit Planned Cost';
+
+    openModal(modal);
+};
+
+// --- Delete Planned Item ---
+window.deletePlannedItem = async function(id) {
+    if (!confirm('Remove this planned cost?')) return;
+    const card = document.querySelector(`.planned-card[data-id="${id}"]`);
+    if (card) {
+        card.classList.add('removing');
+        await new Promise(r => setTimeout(r, 300));
+    }
+    state.plannedItems = state.plannedItems.filter(p => p.id !== id);
+
+    if (state.supabaseConfig.mode === 'supabase' && state.userSession) {
+        await deletePlannedFromSupabase(id);
+    }
+    saveAndSyncData('Planned item deleted');
+};
+
 // --- Status Toggles and Actions ---
 window.toggleExpenseStatus = function(id) {
     const expIndex = state.expenses.findIndex(e => e.id === id);
@@ -1085,10 +1238,11 @@ async function pullDataFromSupabase() {
     const userFilter = effectiveUserId ? `?user_id=eq.${effectiveUserId}` : '';
 
     try {
-        // Fetch expenses & deposits in parallel
-        const [expensesRes, depositsRes] = await Promise.all([
+        // Fetch expenses, deposits & planned in parallel
+        const [expensesRes, depositsRes, plannedRes] = await Promise.all([
             fetch(`${baseUrl}/rest/v1/expenses${userFilter}`, { method: 'GET', headers }),
-            fetch(`${baseUrl}/rest/v1/deposits${userFilter}`, { method: 'GET', headers })
+            fetch(`${baseUrl}/rest/v1/deposits${userFilter}`, { method: 'GET', headers }),
+            fetch(`${baseUrl}/rest/v1/planned_items${userFilter}`, { method: 'GET', headers })
         ]);
 
         if (!expensesRes.ok || !depositsRes.ok) {
@@ -1124,6 +1278,25 @@ async function pullDataFromSupabase() {
             event: item.event || ''
         }));
 
+        // Pull planned items (graceful — if table doesn't exist yet, don't fail)
+        let plannedItems = [];
+        if (plannedRes.ok) {
+            const dbPlanned = await plannedRes.json();
+            plannedItems = dbPlanned.map(item => ({
+                id: item.id,
+                description: item.description,
+                category: item.category,
+                payee: item.payee || '',
+                estimatedAmount: parseFloat(item.estimated_amount),
+                targetDate: item.target_date || '',
+                event: item.event || '',
+                notes: item.notes || '',
+                createdAt: item.created_at || ''
+            }));
+        } else {
+            console.warn('planned_items table may not exist yet:', plannedRes.status);
+        }
+
         // Fetch settings if table exists (optional, catch error so it doesn't block)
         try {
             const settingsRes = await fetch(`${baseUrl}/rest/v1/settings${userFilter}`, { method: 'GET', headers });
@@ -1141,6 +1314,7 @@ async function pullDataFromSupabase() {
         // Replace state with fetched data (authoritative from DB)
         state.expenses = expenses;
         state.deposits = deposits;
+        state.plannedItems = plannedItems;
 
         saveLocalData();
         updateSyncStatus('green', state.sharedOwnerId ? 'Synced (Shared Account)' : 'Synced with Supabase');
@@ -1216,6 +1390,31 @@ async function pushDataToSupabase() {
             return false;
         }
 
+        // Push planned items (graceful — if table doesn't exist yet, don't fail)
+        const dbPlanned = state.plannedItems.map(item => ({
+            id: item.id,
+            description: item.description,
+            category: item.category,
+            payee: item.payee || null,
+            estimated_amount: item.estimatedAmount,
+            target_date: item.targetDate || null,
+            event: item.event || null,
+            notes: item.notes || null,
+            user_id: effectiveUserId
+        }));
+
+        if (dbPlanned.length > 0) {
+            try {
+                await fetch(`${baseUrl}/rest/v1/planned_items`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(dbPlanned)
+                });
+            } catch(e) {
+                console.warn('Failed to push planned items to Supabase:', e);
+            }
+        }
+
         // Try pushing settings, catch error so it doesn't block transactions
         try {
             await fetch(`${baseUrl}/rest/v1/settings`, {
@@ -1259,6 +1458,24 @@ async function deleteFromSupabase(id, type) {
         }
     } catch (e) {
         console.error(`Error deleting transaction ${id} from Supabase:`, e);
+    }
+}
+
+async function deletePlannedFromSupabase(id) {
+    if (state.supabaseConfig.mode !== 'supabase' || !state.userSession) return;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const effectiveUserId = getEffectiveUserId();
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`
+    };
+    try {
+        await fetch(`${baseUrl}/rest/v1/planned_items?id=eq.${id}&user_id=eq.${effectiveUserId}`, {
+            method: 'DELETE',
+            headers
+        });
+    } catch (e) {
+        console.error(`Error deleting planned item ${id} from Supabase:`, e);
     }
 }
 
@@ -1492,11 +1709,81 @@ function setupEventListeners() {
         };
 
         state.expenses.push(newExpense);
+
+        // If this expense came from a planned item conversion, remove the planned item
+        const modalExpense = document.getElementById('modal-add-expense');
+        const convertingId = modalExpense ? modalExpense.dataset.convertingFromPlannedId : null;
+        if (convertingId) {
+            state.plannedItems = state.plannedItems.filter(p => p.id !== convertingId);
+            delete modalExpense.dataset.convertingFromPlannedId;
+            // Reset modal title
+            const h2 = modalExpense.querySelector('.modal-header h2');
+            if (h2) h2.innerHTML = 'Log New Expense';
+            // Also delete from Supabase if syncing
+            if (state.supabaseConfig.mode === 'supabase' && state.userSession) {
+                deletePlannedFromSupabase(convertingId);
+            }
+            showToast(`"${payee}" moved from Planned to Expenses ✅`, 'success');
+        }
+
         closeAllModals();
         formAddExpense.reset();
 
         saveAndSyncData(`Logged expense to ${payee} (-${formatCurrency(amount)})`);
     });
+
+    // Add Planned Cost form submit
+    const formAddPlanned = document.getElementById('form-add-planned');
+    if (formAddPlanned) {
+        formAddPlanned.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const modal = document.getElementById('modal-add-planned');
+            const editingId = modal ? modal.dataset.editingId : null;
+
+            const description = document.getElementById('planned-description').value.trim();
+            const category = document.getElementById('planned-category').value;
+            const payee = document.getElementById('planned-payee').value.trim();
+            const estimatedAmount = parseFloat(document.getElementById('planned-amount').value);
+            const targetDate = document.getElementById('planned-target-date').value;
+            const event = document.getElementById('planned-event').value.trim();
+            const notes = document.getElementById('planned-notes').value.trim();
+
+            if (editingId) {
+                // Edit existing
+                const idx = state.plannedItems.findIndex(p => p.id === editingId);
+                if (idx !== -1) {
+                    state.plannedItems[idx] = {
+                        ...state.plannedItems[idx],
+                        description, category, payee, estimatedAmount, targetDate, event, notes
+                    };
+                }
+                delete modal.dataset.editingId;
+                // Reset modal header
+                const h2 = modal.querySelector('.modal-header h2');
+                if (h2) h2.innerHTML = '<i class="fa-solid fa-calendar-plus" style="color:var(--color-saffron); margin-right:0.5rem;"></i>Plan a Future Cost';
+                showToast(`Planned cost updated: ${description}`, 'success');
+            } else {
+                // Add new
+                const newPlanned = {
+                    id: 'plan-' + Date.now() + Math.floor(Math.random() * 100),
+                    description,
+                    category,
+                    payee,
+                    estimatedAmount,
+                    targetDate,
+                    event,
+                    notes,
+                    createdAt: new Date().toISOString()
+                };
+                state.plannedItems.push(newPlanned);
+                showToast(`Planned: ${description} (${formatCurrency(estimatedAmount)}) added!`, 'success');
+            }
+
+            closeAllModals();
+            formAddPlanned.reset();
+            saveAndSyncData('Planned cost saved');
+        });
+    }
 
     // Search and filters triggers
     document.getElementById('ledger-search').addEventListener('input', renderLedger);
@@ -1689,7 +1976,8 @@ function setupEventListeners() {
     document.getElementById('btn-export-data').addEventListener('click', () => {
         const dataStr = JSON.stringify({
             expenses: state.expenses,
-            deposits: state.deposits
+            deposits: state.deposits,
+            plannedItems: state.plannedItems
         }, null, 2);
         const dataBlob = new Blob([dataStr], { type: 'application/json' });
         const url = URL.createObjectURL(dataBlob);
@@ -1716,9 +2004,10 @@ function setupEventListeners() {
         reader.onload = function(evt) {
             try {
                 const parsed = JSON.parse(evt.target.result);
-                if (Array.isArray(parsed.expenses) || Array.isArray(parsed.deposits)) {
+                if (Array.isArray(parsed.expenses) || Array.isArray(parsed.deposits) || Array.isArray(parsed.plannedItems)) {
                     state.expenses = mergeTransactionLists(state.expenses, parsed.expenses || []);
                     state.deposits = mergeTransactionLists(state.deposits, parsed.deposits || []);
+                    state.plannedItems = mergeTransactionLists(state.plannedItems, parsed.plannedItems || []);
                     
                     saveAndSyncData('Imported JSON Backup');
                     showToast('Backup imported successfully and merged!', 'success');
@@ -1754,6 +2043,17 @@ function setupEventListeners() {
         setActiveNav(navAnalytics);
         document.querySelector('.dashboard-grid').scrollIntoView({ behavior: 'smooth' });
     });
+
+    // Planned Costs nav
+    const navPlanned = document.getElementById('nav-planned');
+    if (navPlanned) {
+        navPlanned.addEventListener('click', (e) => {
+            e.preventDefault();
+            setActiveNav(navPlanned);
+            const plannedSection = document.getElementById('planned-section');
+            if (plannedSection) plannedSection.scrollIntoView({ behavior: 'smooth' });
+        });
+    }
 }
 
 function setActiveNav(element) {
@@ -1778,15 +2078,20 @@ function setupModals() {
     const triggerAddCash = document.getElementById('btn-add-cash-trigger');
     const triggerAddExpense = document.getElementById('btn-add-expense-trigger');
     const triggerSettings = document.getElementById('btn-settings-trigger');
+    const triggerAddPlanned = document.getElementById('btn-add-planned-trigger');
+    const triggerAddPlanned2 = document.getElementById('btn-add-planned-trigger2');
 
     const modalAddCash = document.getElementById('modal-add-cash');
     const modalAddExpense = document.getElementById('modal-add-expense');
     const modalSettings = document.getElementById('modal-settings');
+    const modalAddPlanned = document.getElementById('modal-add-planned');
 
     // Click triggers
     triggerAddCash.addEventListener('click', () => openModal(modalAddCash));
     triggerAddExpense.addEventListener('click', () => openModal(modalAddExpense));
     triggerSettings.addEventListener('click', () => openModal(modalSettings));
+    if (triggerAddPlanned) triggerAddPlanned.addEventListener('click', () => openModal(modalAddPlanned));
+    if (triggerAddPlanned2) triggerAddPlanned2.addEventListener('click', () => openModal(modalAddPlanned));
 
     // Cancel buttons and close crosses
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -1850,11 +2155,28 @@ function openModal(modalEl) {
 
 function closeModal(modalEl) {
     modalEl.classList.remove('active');
+    // Reset planned modal editing state if closed
+    if (modalEl.id === 'modal-add-planned') {
+        delete modalEl.dataset.editingId;
+        const h2 = modalEl.querySelector('.modal-header h2');
+        if (h2) h2.innerHTML = '<i class="fa-solid fa-calendar-plus" style="color:var(--color-saffron); margin-right:0.5rem;"></i>Plan a Future Cost';
+    }
+    // Reset expense modal conversion state if closed without saving
+    if (modalEl.id === 'modal-add-expense') {
+        delete modalEl.dataset.convertingFromPlannedId;
+        const h2 = modalEl.querySelector('.modal-header h2');
+        if (h2) h2.innerHTML = 'Log New Expense';
+    }
 }
 
 function closeAllModals() {
     document.querySelectorAll('.modal-overlay').forEach(modal => {
         modal.classList.remove('active');
+        if (modal.id === 'modal-add-planned') {
+            delete modal.dataset.editingId;
+            const h2 = modal.querySelector('.modal-header h2');
+            if (h2) h2.innerHTML = '<i class="fa-solid fa-calendar-plus" style="color:var(--color-saffron); margin-right:0.5rem;"></i>Plan a Future Cost';
+        }
     });
 }
 

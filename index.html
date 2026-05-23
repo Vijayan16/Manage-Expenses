@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css?v=8">
+    <link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
     <div class="app-container">
@@ -32,6 +32,9 @@
                 </a>
                 <a href="#" class="nav-item" id="nav-analytics">
                     <i class="fa-solid fa-chart-line"></i> Analytics
+                </a>
+                <a href="#" class="nav-item" id="nav-planned">
+                    <i class="fa-solid fa-clock-rotate-left"></i> Planned Costs
                 </a>
             </nav>
             
@@ -82,6 +85,9 @@
                 </button>
                 <button class="btn btn-accent" id="btn-add-expense-trigger">
                     <i class="fa-solid fa-receipt"></i> Log Expense
+                </button>
+                <button class="btn btn-planned" id="btn-add-planned-trigger">
+                    <i class="fa-solid fa-calendar-plus"></i> Plan Cost
                 </button>
             </div>
         </header>
@@ -137,6 +143,43 @@
                     <div class="card-value" id="val-outstanding-total">£0.00</div>
                     <div class="card-footer">
                         <span class="trend-indicator warning" id="val-outstanding-count">0 items pending</span>
+                    </div>
+                </div>
+
+                <!-- Card 5: Planned Budget -->
+                <div class="metric-card card-saffron">
+                    <div class="card-glow"></div>
+                    <div class="card-header">
+                        <span class="card-title">Planned Budget</span>
+                        <div class="card-icon"><i class="fa-solid fa-calendar-days"></i></div>
+                    </div>
+                    <div class="card-value" id="val-planned-total">£0.00</div>
+                    <div class="card-footer">
+                        <span class="trend-indicator planned" id="val-planned-count">0 planned items</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Planned Costs Section -->
+            <section class="planned-section dashboard-card" id="planned-section">
+                <div class="card-title-bar">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div class="planned-section-icon"><i class="fa-solid fa-calendar-days"></i></div>
+                        <div>
+                            <h3>Planned / Upcoming Costs</h3>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:0.1rem;">Budget for future expenses — convert to actual once paid</p>
+                        </div>
+                    </div>
+                    <button class="btn btn-planned btn-sm" id="btn-add-planned-trigger2">
+                        <i class="fa-solid fa-plus"></i> Add Planned Cost
+                    </button>
+                </div>
+                <div class="planned-cards-grid" id="planned-cards-grid">
+                    <!-- Planned item cards injected via JS -->
+                    <div class="planned-empty-state" id="planned-empty-state">
+                        <i class="fa-solid fa-calendar-plus"></i>
+                        <p>No planned costs yet.</p>
+                        <span>Add things you'll need to pay soon — furniture, bills, fees, deposits and more.</span>
                     </div>
                 </div>
             </section>
@@ -429,6 +472,66 @@
     <!-- Dynamic Event Autocomplete Datalist -->
     <datalist id="events-list"></datalist>
 
-    <script src="app.js?v=8"></script>
+    <!-- Modal: Add Planned Cost -->
+    <div class="modal-overlay" id="modal-add-planned">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2><i class="fa-solid fa-calendar-plus" style="color:var(--color-saffron); margin-right:0.5rem;"></i>Plan a Future Cost</h2>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-info-box" style="background:rgba(234,88,12,0.04); border-color:rgba(234,88,12,0.12);">
+                <i class="fa-solid fa-lightbulb" style="color:var(--color-saffron);"></i>
+                <p>Add any cost you know you'll need to pay soon — furniture, rent, service fees, payments to someone. Once confirmed/paid, click <strong>Convert to Expense</strong> to move it into your real expenses.</p>
+            </div>
+            <form id="form-add-planned">
+                <div class="form-group">
+                    <label for="planned-description">What is it for?</label>
+                    <input type="text" id="planned-description" placeholder="e.g. New sofa, Plumber fee, Rent deposit, Loan repayment" required>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="planned-category">Category</label>
+                        <select id="planned-category" required>
+                            <option value="Shopping">Shopping / Purchase</option>
+                            <option value="Utilities">Utilities / Bills</option>
+                            <option value="Paying to someone">Paying to Someone</option>
+                            <option value="Food">Food</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="planned-payee">Who to Pay (Optional)</label>
+                        <input type="text" id="planned-payee" placeholder="e.g. IKEA, John, Landlord">
+                    </div>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="planned-amount">Estimated Budget</label>
+                        <input type="number" step="0.01" min="0.01" id="planned-amount" placeholder="0.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="planned-target-date">Target Date (Optional)</label>
+                        <input type="date" id="planned-target-date">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="planned-event">Event / Group Tag (Optional)</label>
+                    <input type="text" id="planned-event" placeholder="e.g. New Home, Holiday, Office" list="events-list">
+                </div>
+                <div class="form-group">
+                    <label for="planned-notes">Notes (Optional)</label>
+                    <textarea id="planned-notes" rows="2" placeholder="Any details, links, reminders..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-planned"><i class="fa-solid fa-calendar-check"></i> Save Planned Cost</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js?v=9"></script>
 </body>
 </html>
