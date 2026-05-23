@@ -300,7 +300,7 @@
             </div>
             <div class="modal-info-box">
                 <i class="fa-solid fa-circle-info"></i>
-                <p>Sync your dashboard with your GitHub repository. It reads and writes data automatically to a JSON file, keeping your data up-to-date across users and devices without a server.</p>
+                <p>Sync your dashboard with your Supabase database. It reads and writes data automatically to your Supabase tables (<code>expenses</code>, <code>deposits</code>, and <code>settings</code>) keeping your data up-to-date across devices.</p>
             </div>
             <form id="form-settings">
                 <div class="form-group">
@@ -322,40 +322,24 @@
                     <label for="sync-mode">Persistence Mode</label>
                     <select id="sync-mode">
                         <option value="local">Local Browser Storage Only</option>
-                        <option value="github" selected>GitHub Sync Repository</option>
+                        <option value="supabase" selected>Supabase Sync</option>
                     </select>
                 </div>
                 
-                <div id="github-config-fields" style="display: none;">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="gh-username">GitHub Username</label>
-                            <input type="text" id="gh-username" placeholder="e.g. Vijayan16">
-                        </div>
-                        <div class="form-group">
-                            <label for="gh-repo">Repository Name</label>
-                            <input type="text" id="gh-repo" placeholder="e.g. Manage-Expenses">
-                        </div>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="gh-branch">Branch</label>
-                            <input type="text" id="gh-branch" placeholder="main" value="main">
-                        </div>
-                        <div class="form-group">
-                            <label for="gh-path">Data File Path</label>
-                            <input type="text" id="gh-path" placeholder="expenses.json" value="expenses.json">
-                        </div>
+                <div id="supabase-config-fields" style="display: none;">
+                    <div class="form-group">
+                        <label for="sb-url">Supabase API URL</label>
+                        <input type="text" id="sb-url" placeholder="https://your-project.supabase.co" value="https://axillvetqfnoikrzgdjt.supabase.co">
                     </div>
                     <div class="form-group">
-                        <label for="gh-token">Personal Access Token (PAT)</label>
+                        <label for="sb-key">Supabase API Key (Anon Key)</label>
                         <div style="position: relative; display: flex; align-items: center;">
-                            <input type="password" id="gh-token" placeholder="github_pat_..." autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
-                            <button type="button" id="btn-toggle-token" style="position: absolute; right: 0.75rem; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
+                            <input type="password" id="sb-key" placeholder="eyJhbGciOi..." autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
+                            <button type="button" id="btn-toggle-key" style="position: absolute; right: 0.75rem; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
                                 <i class="fa-solid fa-eye"></i>
                             </button>
                         </div>
-                        <small class="form-help-text">Requires Contents write access (fine-grained) or <code>repo</code> write scope (classic).</small>
+                        <small class="form-help-text">Your public anonymous API key (anon key) for direct database sync.</small>
                     </div>
                 </div>
 

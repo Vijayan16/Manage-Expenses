@@ -1,6 +1,6 @@
 /* ==========================================================================
    NovaSpend Application Logic
-   State Management, UI Renderer, Chart Integrator, and GitHub Sync API
+   State Management, UI Renderer, Chart Integrator, and Supabase Sync API
    ========================================================================== */
 
 // --- Constants & Color Configs ---
@@ -20,13 +20,10 @@ let state = {
     expenses: [],
     deposits: [],
     needRemoteInit: false,
-    githubConfig: {
-        mode: 'github',
-        username: 'Vijayan16',
-        repo: 'Manage-Expenses',
-        branch: 'main',
-        filePath: 'expenses.json',
-        token: ''
+    supabaseConfig: {
+        mode: 'supabase',
+        url: 'https://axillvetqfnoikrzgdjt.supabase.co',
+        anonKey: ''
     }
 };
 
@@ -49,23 +46,19 @@ let trendChartInstance = null;
 // --- Initialize App ---
 document.addEventListener('DOMContentLoaded', () => {
     initDateDisplay();
-    loadGithubConfig();
+    loadSupabaseConfig();
     
     // Attempt to load data from configured storage
-    if (state.githubConfig.mode === 'github' && isGithubConfigValid()) {
-        updateSyncStatus('syncing', 'Syncing with GitHub...');
-        pullDataFromGithub()
+    if (state.supabaseConfig.mode === 'supabase' && isSupabaseConfigValid()) {
+        updateSyncStatus('syncing', 'Syncing with Supabase...');
+        pullDataFromSupabase()
             .then(success => {
                 if (success) {
-                    showToast('Data synced with GitHub repository!', 'success');
-                    if (state.needRemoteInit) {
-                        state.needRemoteInit = false;
-                        saveAndSyncData('Initialize remote storage');
-                    }
+                    showToast('Data synced with Supabase!', 'success');
                 } else {
                     // Fallback to local
                     loadLocalData();
-                    showToast('Failed to pull from GitHub. Using offline data.', 'warning');
+                    showToast('Failed to pull from Supabase. Using offline data.', 'warning');
                 }
                 renderDashboard();
             })
@@ -126,48 +119,39 @@ function saveLocalData() {
     }));
 }
 
-function loadGithubConfig() {
-    const localConfig = localStorage.getItem('novaspend_v2_gh_config');
+function loadSupabaseConfig() {
+    const localConfig = localStorage.getItem('novaspend_v2_sb_config');
     if (localConfig) {
         try {
-            state.githubConfig = { ...state.githubConfig, ...JSON.parse(localConfig) };
+            state.supabaseConfig = { ...state.supabaseConfig, ...JSON.parse(localConfig) };
         } catch (e) {
-            console.error('Failed to load GitHub configuration', e);
+            console.error('Failed to load Supabase configuration', e);
         }
     }
     
     // Always populate config form inputs with state values (including our defaults)
     const syncModeEl = document.getElementById('sync-mode');
-    const ghUsernameEl = document.getElementById('gh-username');
-    const ghRepoEl = document.getElementById('gh-repo');
-    const ghBranchEl = document.getElementById('gh-branch');
-    const ghPathEl = document.getElementById('gh-path');
-    const ghTokenEl = document.getElementById('gh-token');
+    const sbUrlEl = document.getElementById('sb-url');
+    const sbKeyEl = document.getElementById('sb-key');
 
-    if (syncModeEl) syncModeEl.value = state.githubConfig.mode;
-    if (ghUsernameEl) ghUsernameEl.value = state.githubConfig.username;
-    if (ghRepoEl) ghRepoEl.value = state.githubConfig.repo;
-    if (ghBranchEl) ghBranchEl.value = state.githubConfig.branch;
-    if (ghPathEl) ghPathEl.value = state.githubConfig.filePath;
-    if (ghTokenEl) ghTokenEl.value = state.githubConfig.token;
+    if (syncModeEl) syncModeEl.value = state.supabaseConfig.mode;
+    if (sbUrlEl) sbUrlEl.value = state.supabaseConfig.url;
+    if (sbKeyEl) sbKeyEl.value = state.supabaseConfig.anonKey;
     
-    toggleGithubConfigVisibility(state.githubConfig.mode);
+    toggleSupabaseConfigVisibility(state.supabaseConfig.mode);
 }
 
-function saveGithubConfig() {
-    localStorage.setItem('novaspend_v2_gh_config', JSON.stringify({
-        mode: state.githubConfig.mode,
-        username: state.githubConfig.username,
-        repo: state.githubConfig.repo,
-        branch: state.githubConfig.branch,
-        filePath: state.githubConfig.filePath,
-        token: state.githubConfig.token
+function saveSupabaseConfig() {
+    localStorage.setItem('novaspend_v2_sb_config', JSON.stringify({
+        mode: state.supabaseConfig.mode,
+        url: state.supabaseConfig.url,
+        anonKey: state.supabaseConfig.anonKey
     }));
 }
 
-function isGithubConfigValid() {
-    const cfg = state.githubConfig;
-    return cfg.username && cfg.repo && cfg.branch && cfg.filePath && cfg.token;
+function isSupabaseConfigValid() {
+    const cfg = state.supabaseConfig;
+    return cfg.url && cfg.anonKey;
 }
 
 function updateEventFilters() {
@@ -733,7 +717,7 @@ window.toggleExpenseStatus = function(id) {
     }
 };
 
-window.deleteTransaction = function(id, type) {
+window.deleteTransaction = async function(id, type) {
     if (!confirm('Are you sure you want to permanently delete this transaction?')) return;
     
     if (type === 'deposit') {
@@ -742,213 +726,224 @@ window.deleteTransaction = function(id, type) {
         state.expenses = state.expenses.filter(e => e.id !== id);
     }
     
+    if (state.supabaseConfig.mode === 'supabase') {
+        await deleteFromSupabase(id, type);
+    }
+    
     saveAndSyncData('Transaction deleted');
 };
 
-// --- Storage & Sync Engine ---
+/// --- Storage & Sync Engine ---
 function saveAndSyncData(actionLabel = 'Data update') {
     // 1. Always write locally for instantaneous safety
     saveLocalData();
     renderDashboard();
 
-    // 2. Perform GitHub push if active and configuration is complete
-    if (state.githubConfig.mode === 'github') {
-        if (!isGithubConfigValid()) {
-            showToast('GitHub Sync configuration is incomplete. Saved locally.', 'error');
+    // 2. Perform Supabase push if active and configuration is complete
+    if (state.supabaseConfig.mode === 'supabase') {
+        if (!isSupabaseConfigValid()) {
+            showToast('Supabase Sync configuration is incomplete. Saved locally.', 'error');
             updateSyncStatus('warning', 'Sync configuration broken');
             return Promise.resolve(false);
         }
 
         updateSyncStatus('syncing', 'Syncing change...');
-        return pushDataToGithub(actionLabel)
+        return pushDataToSupabase()
             .then(success => {
                 if (success) {
-                    showToast(`${actionLabel} synced with GitHub!`, 'success');
+                    showToast(`${actionLabel} synced with Supabase!`, 'success');
                 } else {
-                    showToast('Failed to write to GitHub. Saved locally.', 'error');
+                    showToast('Failed to write to Supabase. Saved locally.', 'error');
                 }
                 return success;
             })
             .catch(e => {
                 console.error(e);
-                showToast('GitHub Sync Error. Saved locally.', 'error');
+                showToast('Supabase Sync Error. Saved locally.', 'error');
                 return false;
             });
     }
     return Promise.resolve(true);
 }
 
-// --- GitHub API Client (Database-free backend logic) ---
-async function pullDataFromGithub() {
-    const cfg = state.githubConfig;
-    const url = `https://api.github.com/repos/${cfg.username}/${cfg.repo}/contents/${cfg.filePath}?ref=${cfg.branch}`;
+// --- Supabase API Client ---
+async function pullDataFromSupabase() {
+    const cfg = state.supabaseConfig;
+    if (!cfg.url || !cfg.anonKey) return false;
+    const baseUrl = cfg.url.replace(/\/+$/, '');
     
+    const headers = {
+        'apikey': cfg.anonKey,
+        'Authorization': `Bearer ${cfg.anonKey}`,
+        'Accept': 'application/json'
+    };
+
     try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': `token ${cfg.token}`,
-                'Accept': 'application/vnd.github.v3+json'
-            }
-        });
+        const [expensesRes, depositsRes, settingsRes] = await Promise.all([
+            fetch(`${baseUrl}/rest/v1/expenses`, { method: 'GET', headers }),
+            fetch(`${baseUrl}/rest/v1/deposits`, { method: 'GET', headers }),
+            fetch(`${baseUrl}/rest/v1/settings`, { method: 'GET', headers })
+        ]);
 
-        if (response.status === 404) {
-            // File doesn't exist yet, we will create it on next push
-            updateSyncStatus('green', 'Connected (New File)');
-            state.needRemoteInit = true;
-            return true; 
-        }
-
-        if (!response.ok) {
-            let errorMsg = `HTTP ${response.status} ${response.statusText}`;
-            try {
-                const errData = await response.json();
-                if (errData && errData.message) {
-                    errorMsg += `: ${errData.message}`;
-                }
-            } catch (e) {}
-            
+        if (!expensesRes.ok || !depositsRes.ok || !settingsRes.ok) {
+            let errorMsg = `Expenses: ${expensesRes.status}, Deposits: ${depositsRes.status}, Settings: ${settingsRes.status}`;
             updateSyncStatus('rose', 'Pull connection failed');
             showToast(`Connection Failed: ${errorMsg}`, 'error');
             return false;
         }
 
-        const data = await response.json();
-        const contentStr = decodeBase64Utf8(data.content);
-        const parsed = JSON.parse(contentStr);
-        
-        state.currencyCode = parsed.currencyCode || 'INR';
-        
-        // Merge strategy: Smart Union by unique ID
-        state.expenses = mergeTransactionLists(state.expenses, parsed.expenses || []);
-        state.deposits = mergeTransactionLists(state.deposits, parsed.deposits || []);
-        
-        // Save merged state back to local storage
+        const dbExpenses = await expensesRes.json();
+        const dbDeposits = await depositsRes.json();
+        const dbSettings = await settingsRes.json();
+
+        // Map from DB columns to JS state structure
+        const expenses = dbExpenses.map(item => ({
+            id: item.id,
+            type: 'expense',
+            amount: parseFloat(item.amount),
+            amountPaid: parseFloat(item.amount_paid),
+            category: item.category,
+            payee: item.payee,
+            date: item.date,
+            status: item.status,
+            notes: item.notes || '',
+            event: item.event || ''
+        }));
+
+        const deposits = dbDeposits.map(item => ({
+            id: item.id,
+            type: 'deposit',
+            amount: parseFloat(item.amount),
+            source: item.source,
+            date: item.date,
+            event: item.event || ''
+        }));
+
+        const currencySetting = dbSettings.find(s => s.key === 'currencyCode');
+        if (currencySetting) {
+            state.currencyCode = currencySetting.value;
+        }
+
+        // Merge logic: Merge remote database data with current local data
+        state.expenses = mergeTransactionLists(state.expenses, expenses);
+        state.deposits = mergeTransactionLists(state.deposits, deposits);
+
         saveLocalData();
-        updateSyncStatus('green', 'Synced with GitHub');
+        updateSyncStatus('green', 'Synced with Supabase');
         return true;
     } catch (e) {
-        console.error('Error fetching data from GitHub:', e);
+        console.error('Error fetching data from Supabase:', e);
         updateSyncStatus('rose', 'Sync Connection Error');
         showToast(`Connection Error: ${e.message || e}`, 'error');
         return false;
     }
 }
 
-async function pushDataToGithub(commitMsg = 'Dashboard updates') {
-    const cfg = state.githubConfig;
-    const url = `https://api.github.com/repos/${cfg.username}/${cfg.repo}/contents/${cfg.filePath}`;
-    
+async function pushDataToSupabase() {
+    const cfg = state.supabaseConfig;
+    if (!cfg.url || !cfg.anonKey) return false;
+    const baseUrl = cfg.url.replace(/\/+$/, '');
+
+    const headers = {
+        'apikey': cfg.anonKey,
+        'Authorization': `Bearer ${cfg.anonKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates' // PostgREST upsert flag
+    };
+
+    // Prepare arrays matching database schema (exclude empty rows to avoid PostgREST issues)
+    const dbExpenses = state.expenses.map(item => ({
+        id: item.id,
+        amount: item.amount,
+        amount_paid: item.amountPaid,
+        category: item.category,
+        payee: item.payee,
+        date: item.date,
+        status: item.status,
+        notes: item.notes || null,
+        event: item.event || null
+    }));
+
+    const dbDeposits = state.deposits.map(item => ({
+        id: item.id,
+        amount: item.amount,
+        source: item.source,
+        date: item.date,
+        event: item.event || null
+    }));
+
+    const dbSettings = [
+        { key: 'currencyCode', value: state.currencyCode }
+    ];
+
     try {
-        // Step 1: Fetch the file metadata to get the current file's SHA (required by GitHub API to update a file)
-        let sha = null;
-        let remoteData = { expenses: [], deposits: [] };
-        
-        const getFileResponse = await fetch(url + `?ref=${cfg.branch}`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `token ${cfg.token}`,
-                'Accept': 'application/vnd.github.v3+json'
-            }
-        });
-        
-        if (getFileResponse.ok) {
-            const fileData = await getFileResponse.json();
-            sha = fileData.sha;
-            
-            // Try to parse remote contents so we don't accidentally overwrite external commits
-            try {
-                const remoteContent = decodeBase64Utf8(fileData.content);
-                remoteData = JSON.parse(remoteContent);
-            } catch(e) {
-                console.warn('Failed parsing remote file for merge; using local overrides.', e);
-            }
-        }
-        
-        // Step 2: Merge local edits and remote edits
-        const mergedExpenses = mergeTransactionLists(remoteData.expenses || [], state.expenses);
-        const mergedDeposits = mergeTransactionLists(remoteData.deposits || [], state.deposits);
-        
-        // Update local state to match final merged output
-        state.expenses = mergedExpenses;
-        state.deposits = mergedDeposits;
-        saveLocalData();
+        // Upsert all tables (POST is upsert when Prefer: resolution=merge-duplicates is set)
+        const [expensesRes, depositsRes, settingsRes] = await Promise.all([
+            dbExpenses.length > 0 ? fetch(`${baseUrl}/rest/v1/expenses`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(dbExpenses)
+            }) : Promise.resolve({ ok: true }),
+            dbDeposits.length > 0 ? fetch(`${baseUrl}/rest/v1/deposits`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(dbDeposits)
+            }) : Promise.resolve({ ok: true }),
+            fetch(`${baseUrl}/rest/v1/settings`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(dbSettings)
+            })
+        ]);
 
-        // Step 3: Package payload
-        const rawJsonString = JSON.stringify({
-            currencyCode: state.currencyCode || 'INR',
-            expenses: mergedExpenses,
-            deposits: mergedDeposits
-        }, null, 2);
-        
-        const base64Content = encodeBase64Utf8(rawJsonString);
-        
-        const bodyPayload = {
-            message: `${commitMsg} [skip ci]`,
-            content: base64Content,
-            branch: cfg.branch
-        };
-        
-        if (sha) {
-            bodyPayload.sha = sha;
-        }
-
-        // Step 4: Write payload back to GitHub repository
-        const putResponse = await fetch(url, {
-            method: 'PUT',
-            headers: {
-                'Authorization': `token ${cfg.token}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/vnd.github.v3+json'
-            },
-            body: JSON.stringify(bodyPayload)
-        });
-
-        if (putResponse.ok) {
-            updateSyncStatus('green', 'Synced with GitHub');
-            return true;
-        } else {
-            let errorMsg = `HTTP ${putResponse.status} ${putResponse.statusText}`;
-            try {
-                const errData = await putResponse.json();
-                if (errData && errData.message) {
-                    errorMsg += `: ${errData.message}`;
-                }
-            } catch (e) {}
-            
-            console.error('Failed to upload to GitHub:', errorMsg);
+        if (!expensesRes.ok || !depositsRes.ok || !settingsRes.ok) {
+            let errorMsg = `Expenses: ${expensesRes.status || 'N/A'}, Deposits: ${depositsRes.status || 'N/A'}, Settings: ${settingsRes.status || 'N/A'}`;
+            console.error('Failed to upload to Supabase:', errorMsg);
             updateSyncStatus('rose', 'Push upload failed');
             showToast(`Upload Failed: ${errorMsg}`, 'error');
             return false;
         }
+
+        updateSyncStatus('green', 'Synced with Supabase');
+        return true;
     } catch (e) {
-        console.error('Network error writing to GitHub:', e);
+        console.error('Network error writing to Supabase:', e);
         updateSyncStatus('rose', 'Connection Error');
         showToast(`Upload Error: ${e.message || e}`, 'error');
         return false;
     }
 }
 
-// --- Helper Utilities for GitHub / Base64 / Merging ---
+async function deleteFromSupabase(id, type) {
+    const cfg = state.supabaseConfig;
+    if (cfg.mode !== 'supabase' || !isSupabaseConfigValid()) return;
+
+    const baseUrl = cfg.url.replace(/\/+$/, '');
+    const headers = {
+        'apikey': cfg.anonKey,
+        'Authorization': `Bearer ${cfg.anonKey}`
+    };
+
+    const table = type === 'deposit' ? 'deposits' : 'expenses';
+    try {
+        const res = await fetch(`${baseUrl}/rest/v1/${table}?id=eq.${id}`, {
+            method: 'DELETE',
+            headers
+        });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+        }
+    } catch (e) {
+        console.error(`Error deleting transaction ${id} from Supabase:`, e);
+    }
+}
+
+// --- Helper Utilities for Data Merging ---
 function mergeTransactionLists(listA, listB) {
     const map = new Map();
     listA.forEach(item => map.set(item.id, item));
     listB.forEach(item => map.set(item.id, item));
     return Array.from(map.values());
-}
-
-// Encode UTF-8 strings safely to Base64 (supporting Unicode characters)
-function encodeBase64Utf8(str) {
-    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1) {
-        return String.fromCharCode(parseInt(p1, 16));
-    }));
-}
-
-// Decode Base64 strings safely to UTF-8
-function decodeBase64Utf8(b64) {
-    return decodeURIComponent(atob(b64).split('').map(function(c) {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-    }).join(''));
 }
 
 function updateSyncStatus(colorClass, text) {
@@ -1058,39 +1053,23 @@ function setupEventListeners() {
         state.currencyCode = selectedCurrency;
         
         const mode = document.getElementById('sync-mode').value;
-        const oldMode = state.githubConfig.mode;
+        const oldMode = state.supabaseConfig.mode;
         
-        // Check if any sync config inputs changed (sanitize leading/trailing slashes and whitespaces)
-        const usernameInput = document.getElementById('gh-username').value.trim().replace(/^\/+|\/+$/g, '');
-        const repoInput = document.getElementById('gh-repo').value.trim().replace(/^\/+|\/+$/g, '');
-        const branchInput = (document.getElementById('gh-branch').value.trim() || 'main').replace(/^\/+|\/+$/g, '');
-        const pathInput = (document.getElementById('gh-path').value.trim() || 'expenses.json').replace(/^\/+|\/+$/g, '');
-        const tokenInput = document.getElementById('gh-token').value.trim();
-
-        // Write cleaned values back to inputs
-        document.getElementById('gh-username').value = usernameInput;
-        document.getElementById('gh-repo').value = repoInput;
-        document.getElementById('gh-branch').value = branchInput;
-        document.getElementById('gh-path').value = pathInput;
+        const urlInput = document.getElementById('sb-url').value.trim();
+        const keyInput = document.getElementById('sb-key').value.trim();
 
         const configChanged = 
             mode !== oldMode ||
-            usernameInput !== state.githubConfig.username ||
-            repoInput !== state.githubConfig.repo ||
-            branchInput !== state.githubConfig.branch ||
-            pathInput !== state.githubConfig.filePath ||
-            tokenInput !== state.githubConfig.token;
+            urlInput !== state.supabaseConfig.url ||
+            keyInput !== state.supabaseConfig.anonKey;
 
-        state.githubConfig.mode = mode;
-        if (mode === 'github') {
-            state.githubConfig.username = usernameInput;
-            state.githubConfig.repo = repoInput;
-            state.githubConfig.branch = branchInput;
-            state.githubConfig.filePath = pathInput;
-            state.githubConfig.token = tokenInput;
+        state.supabaseConfig.mode = mode;
+        if (mode === 'supabase') {
+            state.supabaseConfig.url = urlInput;
+            state.supabaseConfig.anonKey = keyInput;
         }
         
-        saveGithubConfig();
+        saveSupabaseConfig();
         closeAllModals();
 
         // 1. If currency changed, save locally and sync (await it to prevent concurrent pull overwriting it)
@@ -1099,32 +1078,25 @@ function setupEventListeners() {
         }
 
         // 2. Handle Syncing
-        if (mode === 'github') {
-            if (isGithubConfigValid()) {
+        if (mode === 'supabase') {
+            if (isSupabaseConfigValid()) {
                 if (configChanged) {
                     updateSyncStatus('syncing', 'Syncing remote data...');
-                    pullDataFromGithub()
+                    pullDataFromSupabase()
                         .then(success => {
                             if (success) {
-                                showToast('GitHub Sync enabled and data pulled!', 'success');
-                                if (state.needRemoteInit) {
-                                    state.needRemoteInit = false;
-                                    saveAndSyncData('Initialize remote storage');
-                                } else {
-                                    // File already exists, let's merge and push any local changes back to GitHub
-                                    saveAndSyncData('Settings sync');
-                                }
+                                showToast('Supabase Sync enabled and data pulled!', 'success');
+                                saveAndSyncData('Settings sync');
                             } else {
-                                showToast('Failed to connect to GitHub. Review settings.', 'error');
+                                showToast('Failed to connect to Supabase. Review settings.', 'error');
                             }
                             renderDashboard();
                         });
                 } else {
-                    // Config didn't change. Just render dashboard to update currency display
                     renderDashboard();
                 }
             } else {
-                showToast('GitHub settings are incomplete!', 'warning');
+                showToast('Supabase settings are incomplete!', 'warning');
                 updateSyncStatus('amber', 'Config Incomplete');
                 renderDashboard();
             }
@@ -1135,73 +1107,63 @@ function setupEventListeners() {
                 renderDashboard();
             }
             updateSyncStatus('grey', 'Local Storage Only');
-            if (oldMode === 'github') {
+            if (oldMode === 'supabase') {
                 showToast('Switched to Offline Local Storage.', 'info');
             }
         }
     });
 
-    // Toggle GitHub Fields visibility in settings modal based on mode
+    // Toggle Supabase Fields visibility in settings modal based on mode
     document.getElementById('sync-mode').addEventListener('change', (e) => {
-        toggleGithubConfigVisibility(e.target.value);
+        toggleSupabaseConfigVisibility(e.target.value);
     });
 
-    // Test GitHub Connection button
+    // Test Supabase Connection button
     document.getElementById('btn-test-sync').addEventListener('click', () => {
-        // Sanitize leading/trailing slashes and whitespaces
-        const username = document.getElementById('gh-username').value.trim().replace(/^\/+|\/+$/g, '');
-        const repo = document.getElementById('gh-repo').value.trim().replace(/^\/+|\/+$/g, '');
-        const branch = (document.getElementById('gh-branch').value.trim() || 'main').replace(/^\/+|\/+$/g, '');
-        const filePath = (document.getElementById('gh-path').value.trim() || 'expenses.json').replace(/^\/+|\/+$/g, '');
-        const token = document.getElementById('gh-token').value.trim();
+        const url = document.getElementById('sb-url').value.trim();
+        const key = document.getElementById('sb-key').value.trim();
 
-        // Write cleaned values back to inputs
-        document.getElementById('gh-username').value = username;
-        document.getElementById('gh-repo').value = repo;
-        document.getElementById('gh-branch').value = branch;
-        document.getElementById('gh-path').value = filePath;
-
-        if (!username || !repo || !token) {
-            showToast('Please fill Username, Repo, and Access Token first.', 'warning');
+        if (!url || !key) {
+            showToast('Please fill Supabase URL and Anon Key first.', 'warning');
             return;
         }
 
         // Test configuration temporarily
-        const originalConfig = { ...state.githubConfig };
-        state.githubConfig = { mode: 'github', username, repo, branch, filePath, token };
+        const originalConfig = { ...state.supabaseConfig };
+        state.supabaseConfig = { mode: 'supabase', url, anonKey: key };
 
         showToast('Testing connection...', 'info');
         
-        pullDataFromGithub()
+        pullDataFromSupabase()
             .then(success => {
                 if (success) {
                     showToast('Connection Successful! Data pulled.', 'success');
                     renderDashboard();
                 } else {
-                    showToast('Connection Failed. Please check token or repository.', 'error');
+                    showToast('Connection Failed. Please check URL or API Key.', 'error');
                     // Restore original
-                    state.githubConfig = originalConfig;
+                    state.supabaseConfig = originalConfig;
                 }
             })
             .catch(err => {
                 console.error(err);
                 showToast('Connection error.', 'error');
                 // Restore original
-                state.githubConfig = originalConfig;
+                state.supabaseConfig = originalConfig;
             });
     });
 
-    // Toggle PAT field visibility (show/hide password)
-    const btnToggleToken = document.getElementById('btn-toggle-token');
-    if (btnToggleToken) {
-        btnToggleToken.addEventListener('click', () => {
-            const tokenInput = document.getElementById('gh-token');
-            const icon = btnToggleToken.querySelector('i');
-            if (tokenInput.type === 'password') {
-                tokenInput.type = 'text';
+    // Toggle key field visibility (show/hide password)
+    const btnToggleKey = document.getElementById('btn-toggle-key');
+    if (btnToggleKey) {
+        btnToggleKey.addEventListener('click', () => {
+            const keyInput = document.getElementById('sb-key');
+            const icon = btnToggleKey.querySelector('i');
+            if (keyInput.type === 'password') {
+                keyInput.type = 'text';
                 icon.className = 'fa-solid fa-eye-slash';
             } else {
-                tokenInput.type = 'password';
+                keyInput.type = 'password';
                 icon.className = 'fa-solid fa-eye';
             }
         });
@@ -1304,11 +1266,11 @@ function setActiveNav(element) {
     element.classList.add('active');
 }
 
-function toggleGithubConfigVisibility(mode) {
-    const fields = document.getElementById('github-config-fields');
+function toggleSupabaseConfigVisibility(mode) {
+    const fields = document.getElementById('supabase-config-fields');
     const testBtn = document.getElementById('btn-test-sync');
     
-    if (mode === 'github') {
+    if (mode === 'supabase') {
         fields.style.display = 'block';
         testBtn.style.display = 'inline-flex';
     } else {
