@@ -19,6 +19,7 @@ let state = {
     currencyCode: 'INR',
     expenses: [],
     deposits: [],
+    needRemoteInit: false,
     githubConfig: {
         mode: 'github',
         username: 'Vijayan16',
@@ -57,6 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(success => {
                 if (success) {
                     showToast('Data synced with GitHub repository!', 'success');
+                    if (state.needRemoteInit) {
+                        state.needRemoteInit = false;
+                        saveAndSyncData('Initialize remote storage');
+                    }
                 } else {
                     // Fallback to local
                     loadLocalData();
@@ -791,6 +796,7 @@ async function pullDataFromGithub() {
         if (response.status === 404) {
             // File doesn't exist yet, we will create it on next push
             updateSyncStatus('green', 'Connected (New File)');
+            state.needRemoteInit = true;
             return true; 
         }
 
@@ -1083,6 +1089,13 @@ function setupEventListeners() {
                         .then(success => {
                             if (success) {
                                 showToast('GitHub Sync enabled and data pulled!', 'success');
+                                if (state.needRemoteInit) {
+                                    state.needRemoteInit = false;
+                                    saveAndSyncData('Initialize remote storage');
+                                } else {
+                                    // File already exists, let's merge and push any local changes back to GitHub
+                                    saveAndSyncData('Settings sync');
+                                }
                             } else {
                                 showToast('Failed to connect to GitHub. Review settings.', 'error');
                             }
