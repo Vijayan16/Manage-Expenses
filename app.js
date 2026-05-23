@@ -544,7 +544,7 @@ function renderLedger() {
 
     if (filteredList.length === 0) {
         tableBody.innerHTML = `
-            <tr>
+            <tr class="ledger-empty-row">
                 <td colspan="7" class="text-center" style="color: var(--text-muted); padding: 3rem 0;">
                     <i class="fa-solid fa-folder-open" style="font-size: 1.8rem; margin-bottom: 0.5rem; display: block; opacity: 0.6;"></i>
                     No transactions match the selected filters.

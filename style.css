@@ -1216,6 +1216,117 @@ textarea {
         min-width: auto;
         max-width: 100%;
     }
+
+    /* Table Responsive Overrides (Card view on mobile) */
+    .ledger-table {
+        min-width: 100% !important;
+    }
+    
+    .ledger-table thead {
+        display: none;
+    }
+    
+    .ledger-table, 
+    .ledger-table tbody, 
+    .ledger-table tr, 
+    .ledger-table td {
+        display: block;
+        width: 100%;
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) {
+        display: grid !important;
+        grid-template-areas: 
+            "type cat action"
+            "payee payee amount"
+            "date status status";
+        grid-template-columns: auto 1fr auto;
+        gap: 0.65rem;
+        align-items: center;
+        background-color: #ffffff;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: var(--border-radius-md);
+        padding: 1rem;
+        margin-bottom: 0.85rem;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.015);
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row):hover {
+        background-color: #ffffff;
+        transform: none;
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td {
+        padding: 0 !important;
+        border-bottom: none !important;
+        width: auto !important;
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(1) { 
+        grid-area: type; 
+        display: flex; 
+        align-items: center; 
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(2) { 
+        grid-area: cat; 
+        display: flex; 
+        align-items: center; 
+        justify-content: flex-start; 
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(3) { 
+        grid-area: payee; 
+        display: block; 
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(4) { 
+        grid-area: date; 
+        display: flex; 
+        align-items: center; 
+        font-size: 0.8rem !important; 
+        color: var(--text-secondary);
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(5) { 
+        grid-area: status; 
+        display: flex; 
+        align-items: center; 
+        justify-content: flex-end; 
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(6) { 
+        grid-area: amount; 
+        display: flex; 
+        align-items: center; 
+        justify-content: flex-end; 
+        font-size: 1.05rem; 
+        font-weight: 700; 
+        text-align: right !important; 
+    }
+    
+    .ledger-table tr:not(.ledger-empty-row) td:nth-child(7) { 
+        grid-area: action; 
+        display: flex; 
+        align-items: center; 
+        justify-content: flex-end; 
+    }
+    
+    /* Empty state styling */
+    .ledger-table tr.ledger-empty-row {
+        display: block !important;
+        background-color: transparent;
+        border: none;
+        box-shadow: none;
+        padding: 2rem 0;
+    }
+    
+    .ledger-table tr.ledger-empty-row td {
+        display: block;
+        width: 100% !important;
+        text-align: center !important;
+        border-bottom: none !important;
+    }
 }
 
 @media (max-width: 480px) {
