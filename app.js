@@ -784,55 +784,69 @@ function renderPlannedSection() {
         const today = new Date().toISOString().split('T')[0];
         const isOverdue = item.targetDate && item.targetDate < today;
 
-        // Formatted Date
-        const dateHtml = item.targetDate ? `
-            <span class="planned-meta-pill pill-date" ${isOverdue ? 'style="background:rgba(244,63,94,0.08); color:#be123c; border-color:rgba(244,63,94,0.2); font-weight: 500;"' : ''}>
-                <i class="fa-solid ${isOverdue ? 'fa-triangle-exclamation' : 'fa-calendar-days'}"></i>
-                ${isOverdue ? 'Overdue: ' : ''}${formatDate(item.targetDate)}
-            </span>` : `<span style="color: var(--text-muted); font-style: italic; font-size: 0.85rem;">No Date</span>`;
-
-        // Event Badge
-        const eventHtml = item.event ? `
-            <span class="planned-meta-pill pill-event">
-                <i class="fa-solid fa-tag"></i> ${item.event}
-            </span>` : '<span style="color: var(--text-muted); font-size: 0.85rem;">—</span>';
-
-        // Title and notes
-        const titleHtml = `
-            <div style="font-weight: 600; color: var(--text-primary); font-size: 0.95rem;">${item.description}</div>
-            ${item.notes ? `<div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;"><i class="fa-solid fa-note-sticky" style="margin-right: 0.25rem;"></i>${item.notes}</div>` : ''}
+        // Transaction Type Indicator (Column 1)
+        const typeIcon = '<i class="fa-solid fa-hourglass-half" style="color: var(--color-saffron)"></i>';
+        const typeHtml = `
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                ${typeIcon}
+                <span style="font-weight: 500; color: var(--text-primary);">Planned</span>
+            </div>
         `;
 
-        tr.innerHTML = `
-            <td>${titleHtml}</td>
-            <td>
-                <span class="planned-meta-pill pill-category" style="border-color:${catColor}30; color:${catColor}; background:${catColor}10; font-weight: 500;">
-                    <i class="fa-solid fa-tag"></i> ${item.category}
-                </span>
-            </td>
-            <td>
-                ${item.payee ? `
-                    <span style="font-weight: 500; display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-primary);">
-                        <i class="fa-solid fa-user" style="opacity: 0.5; font-size: 0.8rem;"></i> ${item.payee}
-                    </span>` : '<span style="color: var(--text-muted); font-size: 0.85rem;">—</span>'}
-            </td>
-            <td>${dateHtml}</td>
-            <td>${eventHtml}</td>
-            <td class="text-right" style="font-weight: 700; color: var(--color-saffron); font-size: 1rem;">
-                ${formatCurrency(Number(item.estimatedAmount))}
-            </td>
-            <td class="text-center">
-                <div style="display: inline-flex; gap: 0.4rem; justify-content: center;">
-                    <button class="btn-convert" onclick="convertPlannedToExpense('${item.id}')" title="Mark as purchased/paid and convert to a real expense" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 6px;">
-                        <i class="fa-solid fa-circle-check"></i> Convert
-                    </button>
-                    <button class="btn-edit-planned" onclick="editPlannedItem('${item.id}')" title="Edit this planned item" style="padding: 0.35rem 0.55rem; font-size: 0.8rem; border-radius: 6px; background: rgba(0,0,0,0.03); border: 1px solid rgba(0,0,0,0.06);">
-                        <i class="fa-solid fa-pen"></i>
-                    </button>
-                    <button class="btn-delete-planned" onclick="deletePlannedItem('${item.id}')" title="Delete planned item" style="padding: 0.35rem 0.55rem; font-size: 0.8rem; border-radius: 6px; background: rgba(244,63,94,0.05); border: 1px solid rgba(244,63,94,0.15); color: #f43f5e;">
-                        <i class="fa-solid fa-trash-can"></i>
-                    </button>
+        // Category Badge (Column 2)
+        const categoryBadge = `<span class="badge-cat" style="border-left: 3px solid ${catColor}">${item.category}</span>`;
+
+        // Planned Item / Payee avatar & details (Column 3)
+        const avatarSource = item.payee || item.description;
+        const avatarInitial = avatarSource ? avatarSource.trim().substring(0, 2).toUpperCase() : '??';
+        const payeeHtml = `
+            <div class="payee-cell">
+                <div class="payee-avatar" style="background: rgba(234, 88, 12, 0.08); color: var(--color-saffron); font-weight: 700;">${avatarInitial}</div>
+                <div>
+                    <span class="payee-name">${item.description}</span>
+                    ${item.payee ? `<span class="payee-notes" style="color: var(--text-secondary); font-weight: 500; display: block; margin-top: 0.1rem;"><i class="fa-solid fa-user" style="opacity: 0.5; margin-right: 0.25rem;"></i>${item.payee}</span>` : ''}
+                    ${item.event ? `<span class="payee-event-tag"><i class="fa-solid fa-tag"></i> ${item.event}</span>` : ''}
+                    ${item.notes ? `<span class="payee-notes">${item.notes}</span>` : ''}
                 </div>
+            </div>
+        `;
+
+        // Target Date (Column 4)
+        const dateHtml = item.targetDate 
+            ? formatDate(item.targetDate) 
+            : '<span style="color: var(--text-muted); font-style: italic;">No Date</span>';
+
+        // Status Badge (Column 5)
+        let statusBadge = '';
+        if (isOverdue) {
+            statusBadge = '<span class="badge badge-outstanding" style="background-color: rgba(244, 63, 94, 0.08); color: #be123c; border: 1px solid rgba(244, 63, 94, 0.15);"><i class="fa-solid fa-triangle-exclamation"></i> Overdue</span>';
+        } else {
+            statusBadge = '<span class="badge badge-planned" style="background-color: rgba(234, 88, 12, 0.08); color: #c2410c; border: 1px solid rgba(234, 88, 12, 0.15);"><i class="fa-solid fa-clock-rotate-left"></i> Upcoming</span>';
+        }
+
+        // Amount (Column 6)
+        const amountHTML = `${formatCurrency(Number(item.estimatedAmount))}`;
+
+        // Action Buttons (Column 7)
+        tr.innerHTML = `
+            <td>${typeHtml}</td>
+            <td>${categoryBadge}</td>
+            <td>${payeeHtml}</td>
+            <td style="color: var(--text-secondary); font-size: 0.85rem;">${dateHtml}</td>
+            <td>${statusBadge}</td>
+            <td class="text-right amount-cell amount-outstanding" style="color: var(--color-saffron); font-weight: 700;">
+                ${amountHTML}
+            </td>
+            <td class="text-center" style="white-space: nowrap;">
+                <button class="btn-action-edit" onclick="convertPlannedToExpense('${item.id}')" title="Convert to Expense" style="background: rgba(16, 185, 129, 0.08) !important; border-color: rgba(16, 185, 129, 0.15) !important; color: #10b981 !important;">
+                    <i class="fa-solid fa-circle-check"></i>
+                </button>
+                <button class="btn-action-edit" onclick="editPlannedItem('${item.id}')" title="Edit Planned Cost">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+                <button class="btn-action-delete" onclick="deletePlannedItem('${item.id}')" title="Delete Planned Cost">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
             </td>
         `;
         tbody.appendChild(tr);
