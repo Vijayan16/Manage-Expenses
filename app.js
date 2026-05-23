@@ -16,6 +16,7 @@ const CATEGORY_COLORS = {
 
 // --- Application State ---
 let state = {
+    currencyCode: 'GBP',
     expenses: [],
     deposits: [],
     githubConfig: {
@@ -27,6 +28,12 @@ let state = {
         token: ''
     }
 };
+
+// --- Currency Formatting Utility ---
+function formatCurrency(val) {
+    const currencyCode = state.currencyCode || 'GBP';
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currencyCode }).format(val);
+}
 
 // --- Mock Initial Data (Used only on the very first load if both storages are empty) ---
 const mockInitialData = {
@@ -90,6 +97,7 @@ function loadLocalData() {
             const parsed = JSON.parse(localData);
             state.expenses = parsed.expenses || [];
             state.deposits = parsed.deposits || [];
+            state.currencyCode = parsed.currencyCode || 'GBP';
         } catch (e) {
             console.error('Failed to parse local storage data', e);
             loadMockData();
@@ -107,6 +115,7 @@ function loadMockData() {
 
 function saveLocalData() {
     localStorage.setItem('novaspend_v2_data', JSON.stringify({
+        currencyCode: state.currencyCode || 'GBP',
         expenses: state.expenses,
         deposits: state.deposits
     }));
@@ -217,11 +226,6 @@ function calculateAndRenderMetrics() {
     // Cash in hand = Total Deposits - Total Paid Expenses
     const cashInHand = depositsTotal - paidExpensesTotal;
 
-    // Format utility
-    const formatCurrency = (val) => {
-        return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(val);
-    };
-
     // DOM Updates
     document.getElementById('val-cash-hand').textContent = formatCurrency(cashInHand);
     document.getElementById('val-expenses-total').textContent = formatCurrency(expensesTotal);
@@ -274,7 +278,7 @@ function renderCategoryBreakdown() {
                     <span class="cat-dot" style="background-color: ${color}"></span>
                     ${category}
                 </span>
-                <span class="cat-amount">£${amount.toFixed(2)} (${percentage}%)</span>
+                <span class="cat-amount">${formatCurrency(amount)} (${percentage}%)</span>
             </div>
             <div class="progress-track">
                 <div class="progress-bar" style="background-color: ${color}; width: ${percentage}%"></div>
@@ -372,7 +376,7 @@ function renderCharts() {
                                     label += ': ';
                                 }
                                 if (context.parsed !== null) {
-                                    label += new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(context.parsed);
+                                    label += formatCurrency(context.parsed);
                                 }
                                 return label;
                             }
@@ -614,7 +618,7 @@ function renderLedger() {
                 ` : statusBadge}
             </td>
             <td class="text-right amount-cell ${amountClass}">
-                ${amountPrefix}£${Number(item.amount).toFixed(2)}
+                ${amountPrefix}${formatCurrency(Math.abs(Number(item.amount)))}
             </td>
             <td class="text-center">
                 <button class="btn-action-delete" onclick="deleteTransaction('${item.id}', '${item.category === 'Deposit' ? 'deposit' : 'expense'}')" title="Delete Transaction">
@@ -715,6 +719,8 @@ async function pullDataFromGithub() {
         const contentStr = decodeBase64Utf8(data.content);
         const parsed = JSON.parse(contentStr);
         
+        state.currencyCode = parsed.currencyCode || 'GBP';
+        
         // Merge strategy: Smart Union by unique ID
         state.expenses = mergeTransactionLists(state.expenses, parsed.expenses || []);
         state.deposits = mergeTransactionLists(state.deposits, parsed.deposits || []);
@@ -772,6 +778,7 @@ async function pushDataToGithub(commitMsg = 'Dashboard updates') {
 
         // Step 3: Package payload
         const rawJsonString = JSON.stringify({
+            currencyCode: state.currencyCode || 'GBP',
             expenses: mergedExpenses,
             deposits: mergedDeposits
         }, null, 2);
@@ -872,7 +879,7 @@ function setupEventListeners() {
         closeAllModals();
         formAddCash.reset();
         
-        saveAndSyncData(`Cash inflow added (+£${amount.toFixed(2)})`);
+        saveAndSyncData(`Cash inflow added (+${formatCurrency(amount)})`);
     });
 
     // Log Expense submit
@@ -903,7 +910,7 @@ function setupEventListeners() {
         closeAllModals();
         formAddExpense.reset();
 
-        saveAndSyncData(`Logged expense to ${payee} (-£${amount.toFixed(2)})`);
+        saveAndSyncData(`Logged expense to ${payee} (-${formatCurrency(amount)})`);
     });
 
     // Search and filters triggers
@@ -916,6 +923,10 @@ function setupEventListeners() {
     const formSettings = document.getElementById('form-settings');
     formSettings.addEventListener('submit', (e) => {
         e.preventDefault();
+        
+        const selectedCurrency = document.getElementById('currency-select').value;
+        const oldCurrency = state.currencyCode;
+        state.currencyCode = selectedCurrency;
         
         const mode = document.getElementById('sync-mode').value;
         state.githubConfig.mode = mode;
@@ -930,6 +941,10 @@ function setupEventListeners() {
         
         saveGithubConfig();
         closeAllModals();
+
+        if (oldCurrency !== selectedCurrency) {
+            saveAndSyncData('Currency updated');
+        }
 
         if (mode === 'github') {
             if (isGithubConfigValid()) {
@@ -949,9 +964,12 @@ function setupEventListeners() {
                 renderDashboard();
             }
         } else {
+            if (oldCurrency === selectedCurrency) {
+                saveLocalData();
+                renderDashboard();
+            }
             updateSyncStatus('grey', 'Local Storage Only');
             showToast('Switched to Offline Local Storage.', 'info');
-            renderDashboard();
         }
     });
 
@@ -1152,6 +1170,9 @@ function openModal(modalEl) {
     }
     if (modalEl.id === 'modal-add-expense' && !expenseDate.value) {
         expenseDate.value = today;
+    }
+    if (modalEl.id === 'modal-settings') {
+        document.getElementById('currency-select').value = state.currencyCode || 'GBP';
     }
 }
 

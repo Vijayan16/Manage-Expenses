@@ -211,7 +211,7 @@
             </div>
             <form id="form-add-cash">
                 <div class="form-group">
-                    <label for="cash-amount">Amount (£)</label>
+                    <label for="cash-amount">Amount</label>
                     <input type="number" step="0.01" min="0.01" id="cash-amount" placeholder="0.00" required>
                 </div>
                 <div class="form-group">
@@ -243,7 +243,7 @@
             </div>
             <form id="form-add-expense">
                 <div class="form-group">
-                    <label for="expense-amount">Amount (£)</label>
+                    <label for="expense-amount">Amount</label>
                     <input type="number" step="0.01" min="0.01" id="expense-amount" placeholder="0.00" required>
                 </div>
                 <div class="form-grid">
@@ -305,6 +305,21 @@
                 <p>Sync your dashboard with your GitHub repository. It reads and writes data automatically to a JSON file, keeping your data up-to-date across users and devices without a server.</p>
             </div>
             <form id="form-settings">
+                <div class="form-group">
+                    <label for="currency-select">Display Currency</label>
+                    <select id="currency-select">
+                        <option value="GBP">Pound Sterling (£) - GBP</option>
+                        <option value="USD">US Dollar ($) - USD</option>
+                        <option value="EUR">Euro (€) - EUR</option>
+                        <option value="INR">Indian Rupee (₹) - INR</option>
+                        <option value="CAD">Canadian Dollar ($) - CAD</option>
+                        <option value="AUD">Australian Dollar ($) - AUD</option>
+                        <option value="AED">UAE Dirham (د.إ) - AED</option>
+                        <option value="SGD">Singapore Dollar ($) - SGD</option>
+                        <option value="JPY">Japanese Yen (¥) - JPY</option>
+                    </select>
+                </div>
+                
                 <div class="form-group">
                     <label for="sync-mode">Persistence Mode</label>
                     <select id="sync-mode">
