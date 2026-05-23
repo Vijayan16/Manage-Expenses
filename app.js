@@ -16,13 +16,13 @@ const CATEGORY_COLORS = {
 
 // --- Application State ---
 let state = {
-    currencyCode: 'GBP',
+    currencyCode: 'INR',
     expenses: [],
     deposits: [],
     githubConfig: {
-        mode: 'local',
-        username: '',
-        repo: '',
+        mode: 'github',
+        username: 'Vijayan16',
+        repo: 'Manage-Expenses',
         branch: 'main',
         filePath: 'expenses.json',
         token: ''
@@ -31,7 +31,7 @@ let state = {
 
 // --- Currency Formatting Utility ---
 function formatCurrency(val) {
-    const currencyCode = state.currencyCode || 'GBP';
+    const currencyCode = state.currencyCode || 'INR';
     return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currencyCode }).format(val);
 }
 
@@ -97,7 +97,7 @@ function loadLocalData() {
             const parsed = JSON.parse(localData);
             state.expenses = parsed.expenses || [];
             state.deposits = parsed.deposits || [];
-            state.currencyCode = parsed.currencyCode || 'GBP';
+            state.currencyCode = parsed.currencyCode || 'INR';
         } catch (e) {
             console.error('Failed to parse local storage data', e);
             loadMockData();
@@ -115,7 +115,7 @@ function loadMockData() {
 
 function saveLocalData() {
     localStorage.setItem('novaspend_v2_data', JSON.stringify({
-        currencyCode: state.currencyCode || 'GBP',
+        currencyCode: state.currencyCode || 'INR',
         expenses: state.expenses,
         deposits: state.deposits
     }));
@@ -126,20 +126,27 @@ function loadGithubConfig() {
     if (localConfig) {
         try {
             state.githubConfig = { ...state.githubConfig, ...JSON.parse(localConfig) };
-            
-            // Populate config form inputs
-            document.getElementById('sync-mode').value = state.githubConfig.mode;
-            document.getElementById('gh-username').value = state.githubConfig.username;
-            document.getElementById('gh-repo').value = state.githubConfig.repo;
-            document.getElementById('gh-branch').value = state.githubConfig.branch;
-            document.getElementById('gh-path').value = state.githubConfig.filePath;
-            document.getElementById('gh-token').value = state.githubConfig.token;
-            
-            toggleGithubConfigVisibility(state.githubConfig.mode);
         } catch (e) {
             console.error('Failed to load GitHub configuration', e);
         }
     }
+    
+    // Always populate config form inputs with state values (including our defaults)
+    const syncModeEl = document.getElementById('sync-mode');
+    const ghUsernameEl = document.getElementById('gh-username');
+    const ghRepoEl = document.getElementById('gh-repo');
+    const ghBranchEl = document.getElementById('gh-branch');
+    const ghPathEl = document.getElementById('gh-path');
+    const ghTokenEl = document.getElementById('gh-token');
+
+    if (syncModeEl) syncModeEl.value = state.githubConfig.mode;
+    if (ghUsernameEl) ghUsernameEl.value = state.githubConfig.username;
+    if (ghRepoEl) ghRepoEl.value = state.githubConfig.repo;
+    if (ghBranchEl) ghBranchEl.value = state.githubConfig.branch;
+    if (ghPathEl) ghPathEl.value = state.githubConfig.filePath;
+    if (ghTokenEl) ghTokenEl.value = state.githubConfig.token;
+    
+    toggleGithubConfigVisibility(state.githubConfig.mode);
 }
 
 function saveGithubConfig() {
@@ -796,7 +803,7 @@ async function pullDataFromGithub() {
         const contentStr = decodeBase64Utf8(data.content);
         const parsed = JSON.parse(contentStr);
         
-        state.currencyCode = parsed.currencyCode || 'GBP';
+        state.currencyCode = parsed.currencyCode || 'INR';
         
         // Merge strategy: Smart Union by unique ID
         state.expenses = mergeTransactionLists(state.expenses, parsed.expenses || []);
@@ -855,7 +862,7 @@ async function pushDataToGithub(commitMsg = 'Dashboard updates') {
 
         // Step 3: Package payload
         const rawJsonString = JSON.stringify({
-            currencyCode: state.currencyCode || 'GBP',
+            currencyCode: state.currencyCode || 'INR',
             expenses: mergedExpenses,
             deposits: mergedDeposits
         }, null, 2);
@@ -1029,12 +1036,18 @@ function setupEventListeners() {
         const mode = document.getElementById('sync-mode').value;
         const oldMode = state.githubConfig.mode;
         
-        // Check if any sync config inputs changed
-        const usernameInput = document.getElementById('gh-username').value.trim();
-        const repoInput = document.getElementById('gh-repo').value.trim();
-        const branchInput = document.getElementById('gh-branch').value.trim() || 'main';
-        const pathInput = document.getElementById('gh-path').value.trim() || 'expenses.json';
+        // Check if any sync config inputs changed (sanitize leading/trailing slashes and whitespaces)
+        const usernameInput = document.getElementById('gh-username').value.trim().replace(/^\/+|\/+$/g, '');
+        const repoInput = document.getElementById('gh-repo').value.trim().replace(/^\/+|\/+$/g, '');
+        const branchInput = (document.getElementById('gh-branch').value.trim() || 'main').replace(/^\/+|\/+$/g, '');
+        const pathInput = (document.getElementById('gh-path').value.trim() || 'expenses.json').replace(/^\/+|\/+$/g, '');
         const tokenInput = document.getElementById('gh-token').value.trim();
+
+        // Write cleaned values back to inputs
+        document.getElementById('gh-username').value = usernameInput;
+        document.getElementById('gh-repo').value = repoInput;
+        document.getElementById('gh-branch').value = branchInput;
+        document.getElementById('gh-path').value = pathInput;
 
         const configChanged = 
             mode !== oldMode ||
@@ -1296,7 +1309,7 @@ function openModal(modalEl) {
         expenseDate.value = today;
     }
     if (modalEl.id === 'modal-settings') {
-        document.getElementById('currency-select').value = state.currencyCode || 'GBP';
+        document.getElementById('currency-select').value = state.currencyCode || 'INR';
     }
 }
 
