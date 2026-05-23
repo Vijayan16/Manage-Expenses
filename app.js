@@ -788,8 +788,7 @@ async function pullDataFromGithub() {
             method: 'GET',
             headers: {
                 'Authorization': `token ${cfg.token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'Cache-Control': 'no-cache'
+                'Accept': 'application/vnd.github.v3+json'
             }
         });
 
@@ -849,8 +848,7 @@ async function pushDataToGithub(commitMsg = 'Dashboard updates') {
             method: 'GET',
             headers: {
                 'Authorization': `token ${cfg.token}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'Cache-Control': 'no-cache'
+                'Accept': 'application/vnd.github.v3+json'
             }
         });
         
