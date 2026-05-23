@@ -801,7 +801,16 @@ async function pullDataFromGithub() {
         }
 
         if (!response.ok) {
+            let errorMsg = `HTTP ${response.status} ${response.statusText}`;
+            try {
+                const errData = await response.json();
+                if (errData && errData.message) {
+                    errorMsg += `: ${errData.message}`;
+                }
+            } catch (e) {}
+            
             updateSyncStatus('rose', 'Pull connection failed');
+            showToast(`Connection Failed: ${errorMsg}`, 'error');
             return false;
         }
 
@@ -822,6 +831,7 @@ async function pullDataFromGithub() {
     } catch (e) {
         console.error('Error fetching data from GitHub:', e);
         updateSyncStatus('rose', 'Sync Connection Error');
+        showToast(`Connection Error: ${e.message || e}`, 'error');
         return false;
     }
 }
@@ -900,13 +910,23 @@ async function pushDataToGithub(commitMsg = 'Dashboard updates') {
             updateSyncStatus('green', 'Synced with GitHub');
             return true;
         } else {
-            console.error('Failed to upload to GitHub:', await putResponse.text());
+            let errorMsg = `HTTP ${putResponse.status} ${putResponse.statusText}`;
+            try {
+                const errData = await putResponse.json();
+                if (errData && errData.message) {
+                    errorMsg += `: ${errData.message}`;
+                }
+            } catch (e) {}
+            
+            console.error('Failed to upload to GitHub:', errorMsg);
             updateSyncStatus('rose', 'Push upload failed');
+            showToast(`Upload Failed: ${errorMsg}`, 'error');
             return false;
         }
     } catch (e) {
         console.error('Network error writing to GitHub:', e);
         updateSyncStatus('rose', 'Connection Error');
+        showToast(`Upload Error: ${e.message || e}`, 'error');
         return false;
     }
 }
