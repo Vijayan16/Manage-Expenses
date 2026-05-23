@@ -817,6 +817,23 @@ canvas {
 .text-center { text-align: center; }
 
 /* Table action buttons */
+.btn-action-edit {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.4rem;
+    border-radius: var(--border-radius-sm);
+    transition: var(--transition-fast);
+    margin-right: 0.25rem;
+}
+
+.btn-action-edit:hover {
+    color: var(--color-primary);
+    background-color: var(--color-primary-glow);
+}
+
 .btn-action-delete {
     background: transparent;
     border: none;

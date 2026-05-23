@@ -207,36 +207,49 @@ function calculateAndRenderMetrics() {
         ? state.deposits 
         : state.deposits.filter(d => d.event === activeEventFilter);
 
-    // Total deposits (Deposits Paid / Cash In)
+    // Total income/deposits (Cash additions)
     const depositsTotal = filteredDeposits.reduce((acc, curr) => acc + Number(curr.amount), 0);
     
-    // Total expenses (Sum of ALL expenses, both paid & outstanding)
+    // Total expenses (Total cost of all logged items)
     const expensesTotal = filteredExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
     
-    // Paid expenses
-    const paidExpensesTotal = filteredExpenses
-        .filter(exp => exp.status === 'paid')
-        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+    // Deposits Paid (Outflow paid towards expenses)
+    const depositsPaid = filteredExpenses.reduce((acc, curr) => {
+        if (curr.amountPaid !== undefined) {
+            return acc + Number(curr.amountPaid);
+        }
+        // Backward compatibility fallback
+        return acc + Number(curr.status === 'paid' ? curr.amount : 0);
+    }, 0);
         
-    // Outstanding expenses
-    const outstandingTotal = filteredExpenses
-        .filter(exp => exp.status === 'outstanding')
-        .reduce((acc, curr) => acc + Number(curr.amount), 0);
+    // Outstanding balance (Remaining unpaid balance)
+    const outstandingTotal = filteredExpenses.reduce((acc, curr) => {
+        if (curr.amountPaid !== undefined) {
+            return acc + (Number(curr.amount) - Number(curr.amountPaid));
+        }
+        // Backward compatibility fallback
+        return acc + (curr.status === 'outstanding' ? Number(curr.amount) : 0);
+    }, 0);
         
-    // Cash in hand = Total Deposits - Total Paid Expenses
-    const cashInHand = depositsTotal - paidExpensesTotal;
+    // Cash in hand = Total Inflow - Deposits Paid
+    const cashInHand = depositsTotal - depositsPaid;
 
     // DOM Updates
     document.getElementById('val-cash-hand').textContent = formatCurrency(cashInHand);
     document.getElementById('val-expenses-total').textContent = formatCurrency(expensesTotal);
-    document.getElementById('val-deposits-total').textContent = formatCurrency(depositsTotal);
+    document.getElementById('val-deposits-total').textContent = formatCurrency(depositsPaid);
     document.getElementById('val-outstanding-total').textContent = formatCurrency(outstandingTotal);
     
-    // Badge counter texts
-    document.getElementById('val-expenses-count').textContent = `${filteredExpenses.length} recorded items`;
-    document.getElementById('val-deposits-count').textContent = `${filteredDeposits.length} deposits`;
+    // Income text footer
+    document.getElementById('val-income-total').textContent = `Total Cash Added: ${formatCurrency(depositsTotal)}`;
     
-    const outstandingCount = filteredExpenses.filter(exp => exp.status === 'outstanding').length;
+    // Count footers
+    document.getElementById('val-expenses-count').textContent = `${filteredExpenses.length} recorded items`;
+    
+    const paidCount = filteredExpenses.filter(e => e.amountPaid > 0).length;
+    document.getElementById('val-deposits-count').textContent = `${paidCount} items paid`;
+    
+    const outstandingCount = filteredExpenses.filter(e => Number(e.amount) - Number(e.amountPaid || 0) > 0).length;
     document.getElementById('val-outstanding-count').textContent = `${outstandingCount} items pending`;
 }
 
@@ -496,14 +509,26 @@ function renderLedger() {
             category: 'Deposit',
             payee: d.source,
             status: 'paid',
-            event: d.event || ''
+            event: d.event || '',
+            amountPaid: d.amount
         })),
-        ...state.expenses.map(e => ({
-            ...e,
-            unifiedType: 'expense',
-            unifiedType: e.status === 'outstanding' ? 'outstanding' : 'expense',
-            event: e.event || ''
-        }))
+        ...state.expenses.map(e => {
+            const amtPaid = e.amountPaid !== undefined ? Number(e.amountPaid) : (e.status === 'paid' ? Number(e.amount) : 0);
+            let itemStatus = 'unpaid';
+            if (amtPaid === Number(e.amount)) {
+                itemStatus = 'paid';
+            } else if (amtPaid > 0) {
+                itemStatus = 'partial';
+            }
+            
+            return {
+                ...e,
+                unifiedType: 'expense',
+                event: e.event || '',
+                amountPaid: amtPaid,
+                status: itemStatus
+            };
+        })
     ];
     
     // Sort transactions by date descending, then ID descending
@@ -530,8 +555,10 @@ function renderLedger() {
             return false;
         }
         // Status filter
-        if (filterStatus !== 'all' && item.status !== filterStatus) {
-            return false;
+        if (filterStatus !== 'all') {
+            if (filterStatus === 'paid' && item.status !== 'paid') return false;
+            if (filterStatus === 'partial' && item.status !== 'partial') return false;
+            if (filterStatus === 'unpaid' && item.status !== 'unpaid') return false;
         }
         // Search text (payee name or notes)
         if (searchVal) {
@@ -568,13 +595,26 @@ function renderLedger() {
         // Amount styling
         let amountClass = 'amount-expense';
         let amountPrefix = '-';
+        let amountHTML = '';
         
-        if (item.unifiedType === 'deposit') {
+        if (item.category === 'Deposit') {
             amountClass = 'amount-deposit';
             amountPrefix = '+';
-        } else if (item.status === 'outstanding') {
-            amountClass = 'amount-outstanding';
-            amountPrefix = '-';
+            amountHTML = `${amountPrefix}${formatCurrency(Number(item.amount))}`;
+        } else {
+            if (item.status === 'paid') {
+                amountClass = 'amount-expense';
+                amountHTML = `${amountPrefix}${formatCurrency(Number(item.amount))}`;
+            } else if (item.status === 'partial') {
+                amountClass = 'amount-outstanding';
+                amountHTML = `
+                    <span style="font-weight: 700;">${amountPrefix}${formatCurrency(Number(item.amount))}</span>
+                    <span class="payee-notes" style="margin-top: 0.15rem; font-size: 0.72rem; color: var(--text-secondary);">Paid: ${formatCurrency(item.amountPaid)} | Owe: ${formatCurrency(Number(item.amount) - item.amountPaid)}</span>
+                `;
+            } else { // unpaid
+                amountClass = 'amount-outstanding';
+                amountHTML = `${amountPrefix}${formatCurrency(Number(item.amount))}`;
+            }
         }
         
         // Badges
@@ -583,8 +623,10 @@ function renderLedger() {
             statusBadge = '<span class="badge badge-deposit"><i class="fa-solid fa-circle-down"></i> Received</span>';
         } else if (item.status === 'paid') {
             statusBadge = '<span class="badge badge-paid"><i class="fa-solid fa-circle-check"></i> Paid</span>';
+        } else if (item.status === 'partial') {
+            statusBadge = '<span class="badge badge-outstanding" style="background-color: rgba(245, 158, 11, 0.08); color: #92400e; border: 1px solid rgba(245, 158, 11, 0.15);"><i class="fa-solid fa-circle-minus"></i> Partial</span>';
         } else {
-            statusBadge = '<span class="badge badge-outstanding"><i class="fa-solid fa-circle-dot"></i> Outstanding</span>';
+            statusBadge = '<span class="badge badge-outstanding"><i class="fa-solid fa-circle-dot"></i> Unpaid</span>';
         }
 
         const categoryBadge = `<span class="badge-cat" style="border-left: 3px solid ${CATEGORY_COLORS[item.category] || 'var(--color-primary)'}">${item.category}</span>`;
@@ -618,9 +660,14 @@ function renderLedger() {
                 ` : statusBadge}
             </td>
             <td class="text-right amount-cell ${amountClass}">
-                ${amountPrefix}${formatCurrency(Math.abs(Number(item.amount)))}
+                ${amountHTML}
             </td>
-            <td class="text-center">
+            <td class="text-center" style="white-space: nowrap;">
+                ${item.unifiedType === 'expense' ? `
+                    <button class="btn-action-edit" onclick="toggleExpenseStatus('${item.id}')" title="Update Payment/Deposit Amount">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                ` : ''}
                 <button class="btn-action-delete" onclick="deleteTransaction('${item.id}', '${item.category === 'Deposit' ? 'deposit' : 'expense'}')" title="Delete Transaction">
                     <i class="fa-solid fa-trash-can"></i>
                 </button>
@@ -640,10 +687,37 @@ function formatDate(dateStr) {
 window.toggleExpenseStatus = function(id) {
     const expIndex = state.expenses.findIndex(e => e.id === id);
     if (expIndex !== -1) {
-        const currentStatus = state.expenses[expIndex].status;
-        state.expenses[expIndex].status = currentStatus === 'paid' ? 'outstanding' : 'paid';
+        const item = state.expenses[expIndex];
+        const total = Number(item.amount);
+        const currentPaid = item.amountPaid !== undefined ? Number(item.amountPaid) : (item.status === 'paid' ? total : 0);
         
-        saveAndSyncData('Expense status updated');
+        // Show an interactive prompt to update the payment/deposit amount
+        const input = prompt(
+            `Update payment for "${item.payee || 'Expense'}" (${item.category})\n` +
+            `Total Amount: ${formatCurrency(total)}\n\n` +
+            `Enter amount paid so far (between 0 and ${total}):`,
+            currentPaid
+        );
+        
+        if (input === null) return; // User cancelled
+        
+        const val = input.trim();
+        if (val === '') {
+            // Toggle behavior if they entered empty string
+            const nextPaid = currentPaid === total ? 0 : total;
+            state.expenses[expIndex].amountPaid = nextPaid;
+            state.expenses[expIndex].status = nextPaid === total ? 'paid' : 'outstanding';
+        } else {
+            const newPaid = parseFloat(val);
+            if (isNaN(newPaid) || newPaid < 0 || newPaid > total) {
+                alert(`Please enter a valid number between 0 and ${total}.`);
+                return;
+            }
+            state.expenses[expIndex].amountPaid = newPaid;
+            state.expenses[expIndex].status = newPaid === total ? 'paid' : (newPaid > 0 ? 'partial' : 'outstanding');
+        }
+        
+        saveAndSyncData(`Updated payment for ${item.payee || 'Expense'} to ${formatCurrency(state.expenses[expIndex].amountPaid)}`);
     }
 };
 
@@ -670,23 +744,26 @@ function saveAndSyncData(actionLabel = 'Data update') {
         if (!isGithubConfigValid()) {
             showToast('GitHub Sync configuration is incomplete. Saved locally.', 'error');
             updateSyncStatus('warning', 'Sync configuration broken');
-            return;
+            return Promise.resolve(false);
         }
 
         updateSyncStatus('syncing', 'Syncing change...');
-        pushDataToGithub(actionLabel)
+        return pushDataToGithub(actionLabel)
             .then(success => {
                 if (success) {
                     showToast(`${actionLabel} synced with GitHub!`, 'success');
                 } else {
                     showToast('Failed to write to GitHub. Saved locally.', 'error');
                 }
+                return success;
             })
             .catch(e => {
                 console.error(e);
                 showToast('GitHub Sync Error. Saved locally.', 'error');
+                return false;
             });
     }
+    return Promise.resolve(true);
 }
 
 // --- GitHub API Client (Database-free backend logic) ---
@@ -890,14 +967,19 @@ function setupEventListeners() {
         const category = document.getElementById('expense-category').value;
         const payee = document.getElementById('expense-payee').value;
         const date = document.getElementById('expense-date').value;
-        const status = document.getElementById('expense-status').value;
+        const amountPaidInput = document.getElementById('expense-amount-paid').value;
+        const amountPaid = amountPaidInput === '' ? amount : parseFloat(amountPaidInput);
         const event = document.getElementById('expense-event').value.trim();
         const notes = document.getElementById('expense-notes').value;
+
+        // Determine status (for backward compatibility)
+        const status = amountPaid === amount ? 'paid' : 'outstanding';
 
         const newExpense = {
             id: 'exp-' + Date.now() + Math.floor(Math.random() * 100),
             type: 'expense',
             amount: amount,
+            amountPaid: amountPaid,
             category: category,
             payee: payee,
             date: date,
@@ -919,9 +1001,25 @@ function setupEventListeners() {
     document.getElementById('filter-event').addEventListener('change', renderDashboard);
     document.getElementById('filter-status').addEventListener('change', renderLedger);
 
+    // Auto-fill Paid field as user types Amount
+    document.getElementById('expense-amount').addEventListener('input', (evt) => {
+        const paidInput = document.getElementById('expense-amount-paid');
+        if (!paidInput.dataset.userEdited) {
+            paidInput.value = evt.target.value;
+        }
+    });
+
+    document.getElementById('expense-amount-paid').addEventListener('input', (evt) => {
+        evt.target.dataset.userEdited = 'true';
+    });
+
+    document.getElementById('form-add-expense').addEventListener('reset', () => {
+        delete document.getElementById('expense-amount-paid').dataset.userEdited;
+    });
+
     // Save Settings Submit
     const formSettings = document.getElementById('form-settings');
-    formSettings.addEventListener('submit', (e) => {
+    formSettings.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const selectedCurrency = document.getElementById('currency-select').value;
@@ -929,47 +1027,73 @@ function setupEventListeners() {
         state.currencyCode = selectedCurrency;
         
         const mode = document.getElementById('sync-mode').value;
-        state.githubConfig.mode = mode;
+        const oldMode = state.githubConfig.mode;
         
+        // Check if any sync config inputs changed
+        const usernameInput = document.getElementById('gh-username').value.trim();
+        const repoInput = document.getElementById('gh-repo').value.trim();
+        const branchInput = document.getElementById('gh-branch').value.trim() || 'main';
+        const pathInput = document.getElementById('gh-path').value.trim() || 'expenses.json';
+        const tokenInput = document.getElementById('gh-token').value.trim();
+
+        const configChanged = 
+            mode !== oldMode ||
+            usernameInput !== state.githubConfig.username ||
+            repoInput !== state.githubConfig.repo ||
+            branchInput !== state.githubConfig.branch ||
+            pathInput !== state.githubConfig.filePath ||
+            tokenInput !== state.githubConfig.token;
+
+        state.githubConfig.mode = mode;
         if (mode === 'github') {
-            state.githubConfig.username = document.getElementById('gh-username').value.trim();
-            state.githubConfig.repo = document.getElementById('gh-repo').value.trim();
-            state.githubConfig.branch = document.getElementById('gh-branch').value.trim() || 'main';
-            state.githubConfig.filePath = document.getElementById('gh-path').value.trim() || 'expenses.json';
-            state.githubConfig.token = document.getElementById('gh-token').value.trim();
+            state.githubConfig.username = usernameInput;
+            state.githubConfig.repo = repoInput;
+            state.githubConfig.branch = branchInput;
+            state.githubConfig.filePath = pathInput;
+            state.githubConfig.token = tokenInput;
         }
         
         saveGithubConfig();
         closeAllModals();
 
+        // 1. If currency changed, save locally and sync (await it to prevent concurrent pull overwriting it)
         if (oldCurrency !== selectedCurrency) {
-            saveAndSyncData('Currency updated');
+            await saveAndSyncData('Currency updated');
         }
 
+        // 2. Handle Syncing
         if (mode === 'github') {
             if (isGithubConfigValid()) {
-                updateSyncStatus('syncing', 'Syncing config...');
-                pullDataFromGithub()
-                    .then(success => {
-                        if (success) {
-                            showToast('GitHub Sync enabled successfully!', 'success');
-                        } else {
-                            showToast('Failed to connect to GitHub. Review settings.', 'error');
-                        }
-                        renderDashboard();
-                    });
+                if (configChanged) {
+                    updateSyncStatus('syncing', 'Syncing remote data...');
+                    pullDataFromGithub()
+                        .then(success => {
+                            if (success) {
+                                showToast('GitHub Sync enabled and data pulled!', 'success');
+                            } else {
+                                showToast('Failed to connect to GitHub. Review settings.', 'error');
+                            }
+                            renderDashboard();
+                        });
+                } else {
+                    // Config didn't change. Just render dashboard to update currency display
+                    renderDashboard();
+                }
             } else {
                 showToast('GitHub settings are incomplete!', 'warning');
                 updateSyncStatus('amber', 'Config Incomplete');
                 renderDashboard();
             }
         } else {
+            // Switched to/remained in local mode
             if (oldCurrency === selectedCurrency) {
                 saveLocalData();
                 renderDashboard();
             }
             updateSyncStatus('grey', 'Local Storage Only');
-            showToast('Switched to Offline Local Storage.', 'info');
+            if (oldMode === 'github') {
+                showToast('Switched to Offline Local Storage.', 'info');
+            }
         }
     });
 
