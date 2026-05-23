@@ -816,18 +816,36 @@ async function signIn(email, password) {
             body: JSON.stringify({ email, password })
         });
         
+        const data = await response.json();
+        
         if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error_description || errData.message || 'Login failed');
+            // Handle email not confirmed specifically
+            const msg = data.error_description || data.msg || data.message || '';
+            const lowerMsg = msg.toLowerCase();
+            if (lowerMsg.includes('email not confirmed') || lowerMsg.includes('not confirmed')) {
+                showAuthMessage(
+                    'Email not confirmed',
+                    'Please check your inbox and click the confirmation link before signing in. Check your spam folder too.',
+                    'warning'
+                );
+                // Show resend button
+                showResendConfirmation(email);
+                return false;
+            }
+            if (lowerMsg.includes('invalid login') || lowerMsg.includes('invalid credentials') || lowerMsg.includes('wrong password')) {
+                showAuthMessage('Incorrect email or password', 'Please check your credentials and try again.', 'error');
+                return false;
+            }
+            throw new Error(msg || 'Login failed');
         }
         
-        const data = await response.json();
         const session = {
             email: data.user.email,
             id: data.user.id,
             accessToken: data.access_token
         };
         saveAuthSession(session);
+        hideAuthMessage();
         showToast('Successfully signed in!', 'success');
         checkAuthRouting();
         
@@ -838,7 +856,7 @@ async function signIn(email, password) {
         return true;
     } catch (e) {
         console.error(e);
-        showToast(`Login Error: ${e.message}`, 'error');
+        showAuthMessage('Login Failed', e.message || 'Unable to connect. Please try again.', 'error');
         return false;
     }
 }
@@ -857,20 +875,140 @@ async function signUp(email, password) {
             body: JSON.stringify({ email, password })
         });
         
+        const data = await response.json();
+        
         if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.message || 'Registration failed');
+            const msg = data.msg || data.message || data.error_description || '';
+            const lowerMsg = msg.toLowerCase();
+            if (lowerMsg.includes('already registered') || lowerMsg.includes('user already registered')) {
+                showAuthMessage('Account already exists', 'An account with this email already exists. Please sign in instead.', 'warning');
+                const tabLogin = document.getElementById('tab-login');
+                if (tabLogin) tabLogin.click();
+                return false;
+            }
+            throw new Error(msg || 'Registration failed');
+        }
+        
+        // Check if email confirmation is required
+        // Supabase returns identities:[] and no access_token when confirmation is needed
+        const needsConfirmation = !data.access_token && (!data.identities || data.identities.length === 0);
+        
+        if (needsConfirmation || !data.access_token) {
+            // User already exists but not confirmed, OR email confirmation required
+            showAuthMessage(
+                '📧 Check your email!',
+                `A confirmation link has been sent to ${email}. Please click the link in your email to activate your account, then come back and sign in.`,
+                'info'
+            );
+            const tabLogin = document.getElementById('tab-login');
+            if (tabLogin) tabLogin.click();
+            return true;
+        }
+        
+        // If Supabase auto-confirms (no email confirmation needed), log them in directly
+        if (data.access_token && data.user) {
+            const session = {
+                email: data.user.email,
+                id: data.user.id,
+                accessToken: data.access_token
+            };
+            saveAuthSession(session);
+            hideAuthMessage();
+            showToast('Account created and signed in!', 'success');
+            checkAuthRouting();
+            updateSyncStatus('syncing', 'Setting up your account...');
+            await pullDataFromSupabase();
+            renderDashboard();
+            return true;
         }
         
         showToast('Registration successful! Please sign in.', 'success');
-        // Switch tab to login automatically
         const tabLogin = document.getElementById('tab-login');
         if (tabLogin) tabLogin.click();
         return true;
     } catch (e) {
         console.error(e);
-        showToast(`Signup Error: ${e.message}`, 'error');
+        showAuthMessage('Registration Failed', e.message || 'Unable to register. Please try again.', 'error');
         return false;
+    }
+}
+
+async function resendConfirmationEmail(email) {
+    const url = `${SUPABASE_URL}/auth/v1/resend`;
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+    };
+    try {
+        await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ type: 'signup', email })
+        });
+        showToast('Confirmation email resent! Check your inbox.', 'success');
+    } catch(e) {
+        showToast('Failed to resend. Please try registering again.', 'error');
+    }
+}
+
+function showAuthMessage(title, body, type = 'info') {
+    let msgEl = document.getElementById('auth-message-box');
+    if (!msgEl) {
+        msgEl = document.createElement('div');
+        msgEl.id = 'auth-message-box';
+        const form = document.getElementById('form-auth');
+        if (form) form.insertAdjacentElement('beforebegin', msgEl);
+    }
+    const colors = {
+        info:    { bg: 'rgba(99,102,241,0.08)',  border: 'rgba(99,102,241,0.3)',  text: '#4338ca' },
+        warning: { bg: 'rgba(245,158,11,0.08)',  border: 'rgba(245,158,11,0.3)',  text: '#92400e' },
+        error:   { bg: 'rgba(244,63,94,0.08)',   border: 'rgba(244,63,94,0.3)',   text: '#be123c' },
+        success: { bg: 'rgba(16,185,129,0.08)',  border: 'rgba(16,185,129,0.3)',  text: '#065f46' }
+    };
+    const c = colors[type] || colors.info;
+    msgEl.style.cssText = `
+        background: ${c.bg};
+        border: 1px solid ${c.border};
+        border-radius: 10px;
+        padding: 0.9rem 1.1rem;
+        margin-bottom: 1.25rem;
+        color: ${c.text};
+        font-size: 0.875rem;
+        line-height: 1.5;
+    `;
+    msgEl.innerHTML = `<strong style="display:block;margin-bottom:0.2rem;">${title}</strong>${body}`;
+}
+
+function hideAuthMessage() {
+    const msgEl = document.getElementById('auth-message-box');
+    if (msgEl) msgEl.remove();
+    const resendEl = document.getElementById('auth-resend-btn');
+    if (resendEl) resendEl.remove();
+}
+
+function showResendConfirmation(email) {
+    let resendEl = document.getElementById('auth-resend-btn');
+    if (!resendEl) {
+        resendEl = document.createElement('button');
+        resendEl.id = 'auth-resend-btn';
+        resendEl.type = 'button';
+        resendEl.style.cssText = `
+            width: 100%;
+            margin-top: 0.75rem;
+            padding: 0.6rem;
+            background: rgba(99,102,241,0.08);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 8px;
+            color: #4338ca;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        `;
+        resendEl.textContent = '📨 Resend Confirmation Email';
+        resendEl.onclick = () => resendConfirmationEmail(email);
+        const msgEl = document.getElementById('auth-message-box');
+        if (msgEl) msgEl.insertAdjacentElement('afterend', resendEl);
     }
 }
 
