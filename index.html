@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="style.css?v=7">
+    <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
     <div class="app-container">
@@ -57,22 +57,34 @@
 
         <!-- Main Dashboard Area -->
         <main class="main-content">
-            <!-- Header -->
-            <header class="main-header">
-                <div class="header-title-area">
-                    <h1>Financial Dashboard</h1>
-                    <p class="current-date" id="header-date">Saturday, May 23, 2026</p>
-                </div>
-                
-                <div class="header-actions">
-                    <button class="btn btn-primary" id="btn-add-cash-trigger">
-                        <i class="fa-solid fa-circle-plus"></i> Add Cash
-                    </button>
-                    <button class="btn btn-accent" id="btn-add-expense-trigger">
-                        <i class="fa-solid fa-receipt"></i> Log Expense
-                    </button>
-                </div>
-            </header>
+            <!-- Shared Account Banner -->
+        <div id="shared-account-banner" style="display:none; align-items:center; gap:0.75rem; background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(168,85,247,0.12)); border:1px solid rgba(99,102,241,0.25); border-radius:12px; padding:0.75rem 1.25rem; margin-bottom:1.25rem;">
+            <i class="fa-solid fa-user-group" style="color:#6366f1; font-size:1rem;"></i>
+            <div style="flex:1;">
+                <span style="font-weight:600; color:#4338ca; font-size:0.9rem;">Shared Account</span>
+                <span style="color:#6366f1; font-size:0.85rem;"> — You are viewing </span>
+                <span id="shared-owner-label" style="font-weight:600; color:#4338ca; font-size:0.85rem;">owner@email.com</span>
+                <span style="color:#6366f1; font-size:0.85rem;">'s expenses</span>
+            </div>
+            <i class="fa-solid fa-shield-halved" style="color:#6366f1; font-size:0.9rem;" title="Read & write access"></i>
+        </div>
+
+        <!-- Header -->
+        <header class="main-header">
+            <div class="header-title-area">
+                <h1>Financial Dashboard</h1>
+                <p class="current-date" id="header-date">Saturday, May 23, 2026</p>
+            </div>
+            
+            <div class="header-actions">
+                <button class="btn btn-primary" id="btn-add-cash-trigger">
+                    <i class="fa-solid fa-circle-plus"></i> Add Cash
+                </button>
+                <button class="btn btn-accent" id="btn-add-expense-trigger">
+                    <i class="fa-solid fa-receipt"></i> Log Expense
+                </button>
+            </div>
+        </header>
 
             <!-- Metrics Panel -->
             <section class="metrics-grid">
@@ -343,6 +355,26 @@
 
             <hr class="modal-divider">
 
+            <!-- Share Access Section -->
+            <div id="share-access-section">
+                <h3 style="margin-bottom:0.75rem; display:flex; align-items:center; gap:0.5rem;">
+                    <i class="fa-solid fa-user-group" style="color:#6366f1;"></i> Share Account Access
+                </h3>
+                <p style="font-size:0.85rem; color:var(--text-secondary); margin-bottom:1rem; line-height:1.5;">
+                    Add your wife's email so she can log in with her own account and see all your shared expenses. She must register on the app first.
+                </p>
+                <form id="form-add-shared-user" style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <input type="email" id="shared-user-email" placeholder="wife@email.com" required
+                        style="flex:1; padding:0.65rem 0.9rem; border:1px solid var(--border-color); border-radius:8px; font-size:0.9rem; font-family:var(--font-body); background:var(--bg-card); color:var(--text-primary);">
+                    <button type="submit" style="padding:0.65rem 1.1rem; background:var(--color-primary); color:white; border:none; border-radius:8px; font-weight:600; cursor:pointer; font-size:0.9rem; white-space:nowrap;">
+                        Add
+                    </button>
+                </form>
+                <div id="shared-users-list"></div>
+            </div>
+
+            <hr class="modal-divider">
+
             <div class="backup-section">
                 <h3>Manual Backup</h3>
                 <div class="backup-buttons">
@@ -397,6 +429,6 @@
     <!-- Dynamic Event Autocomplete Datalist -->
     <datalist id="events-list"></datalist>
 
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
 </body>
 </html>

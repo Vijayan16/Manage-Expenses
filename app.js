@@ -27,7 +27,8 @@ let state = {
     supabaseConfig: {
         mode: 'supabase'
     },
-    userSession: null
+    userSession: null,
+    sharedOwnerId: null       // Set when logged-in user is a shared member of another account
 };
 
 // --- Currency Formatting Utility ---
@@ -135,6 +136,10 @@ function loadAuthSession() {
     if (session) {
         try {
             state.userSession = JSON.parse(session);
+            // Restore shared account state if previously detected
+            if (state.userSession && state.userSession.sharedOwnerId) {
+                state.sharedOwnerId = state.userSession.sharedOwnerId;
+            }
         } catch (e) {
             console.error('Failed to parse auth session', e);
         }
@@ -148,23 +153,43 @@ function saveAuthSession(sessionData) {
 
 function clearAuthSession() {
     state.userSession = null;
+    state.sharedOwnerId = null;
     localStorage.removeItem('novaspend_auth_session');
+}
+
+// Returns the effective user_id to use for DB operations.
+// If logged in as a shared member, use the owner's ID so data stays in the correct account.
+function getEffectiveUserId() {
+    return state.sharedOwnerId || (state.userSession ? state.userSession.id : null);
 }
 
 function checkAuthRouting() {
     const authScreen = document.getElementById('auth-screen');
     const profileEl = document.getElementById('user-profile');
     const emailDisplay = document.getElementById('user-email-display');
+    const sharedBanner = document.getElementById('shared-account-banner');
 
     if (state.supabaseConfig.mode === 'supabase' && !state.userSession) {
         if (authScreen) authScreen.style.display = 'flex';
         if (profileEl) profileEl.style.display = 'none';
+        if (sharedBanner) sharedBanner.style.display = 'none';
     } else {
         if (authScreen) authScreen.style.display = 'none';
         
         if (state.supabaseConfig.mode === 'supabase' && state.userSession) {
             if (profileEl) profileEl.style.display = 'flex';
             if (emailDisplay) emailDisplay.textContent = state.userSession.email;
+
+            // Show shared account banner if viewing another account
+            if (sharedBanner) {
+                if (state.sharedOwnerId) {
+                    sharedBanner.style.display = 'flex';
+                    const ownerLabel = document.getElementById('shared-owner-label');
+                    if (ownerLabel) ownerLabel.textContent = state.userSession.sharedOwnerEmail || 'shared account';
+                } else {
+                    sharedBanner.style.display = 'none';
+                }
+            }
         } else {
             if (profileEl) profileEl.style.display = 'none';
         }
@@ -849,6 +874,9 @@ async function signIn(email, password) {
         showToast('Successfully signed in!', 'success');
         checkAuthRouting();
         
+        // Check if this user has been granted access to another account
+        await checkSharedAccess();
+        
         // Sync and pull data immediately
         updateSyncStatus('syncing', 'Syncing remote data...');
         await pullDataFromSupabase();
@@ -1045,6 +1073,7 @@ async function signOut() {
 async function pullDataFromSupabase() {
     if (!state.userSession) return false;
     const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const effectiveUserId = getEffectiveUserId();
     
     const headers = {
         'apikey': SUPABASE_ANON_KEY,
@@ -1052,11 +1081,14 @@ async function pullDataFromSupabase() {
         'Accept': 'application/json'
     };
 
+    // When viewing a shared account, filter by the owner's user_id
+    const userFilter = effectiveUserId ? `?user_id=eq.${effectiveUserId}` : '';
+
     try {
         // Fetch expenses & deposits in parallel
         const [expensesRes, depositsRes] = await Promise.all([
-            fetch(`${baseUrl}/rest/v1/expenses`, { method: 'GET', headers }),
-            fetch(`${baseUrl}/rest/v1/deposits`, { method: 'GET', headers })
+            fetch(`${baseUrl}/rest/v1/expenses${userFilter}`, { method: 'GET', headers }),
+            fetch(`${baseUrl}/rest/v1/deposits${userFilter}`, { method: 'GET', headers })
         ]);
 
         if (!expensesRes.ok || !depositsRes.ok) {
@@ -1094,7 +1126,7 @@ async function pullDataFromSupabase() {
 
         // Fetch settings if table exists (optional, catch error so it doesn't block)
         try {
-            const settingsRes = await fetch(`${baseUrl}/rest/v1/settings`, { method: 'GET', headers });
+            const settingsRes = await fetch(`${baseUrl}/rest/v1/settings${userFilter}`, { method: 'GET', headers });
             if (settingsRes.ok) {
                 const dbSettings = await settingsRes.json();
                 const currencySetting = dbSettings.find(s => s.key === 'currencyCode');
@@ -1106,12 +1138,12 @@ async function pullDataFromSupabase() {
             console.warn('Failed to pull settings from Supabase:', e);
         }
 
-        // Merge strategy: Smart Union by unique ID
-        state.expenses = mergeTransactionLists(state.expenses, expenses);
-        state.deposits = mergeTransactionLists(state.deposits, deposits);
+        // Replace state with fetched data (authoritative from DB)
+        state.expenses = expenses;
+        state.deposits = deposits;
 
         saveLocalData();
-        updateSyncStatus('green', 'Synced with Supabase');
+        updateSyncStatus('green', state.sharedOwnerId ? 'Synced (Shared Account)' : 'Synced with Supabase');
         return true;
     } catch (e) {
         console.error('Error fetching data from Supabase:', e);
@@ -1124,6 +1156,7 @@ async function pullDataFromSupabase() {
 async function pushDataToSupabase() {
     if (!state.userSession) return false;
     const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const effectiveUserId = getEffectiveUserId();
 
     const headers = {
         'apikey': SUPABASE_ANON_KEY,
@@ -1133,6 +1166,7 @@ async function pushDataToSupabase() {
     };
 
     // Prepare arrays matching database schema
+    // Use effectiveUserId so shared members write to the owner's data
     const dbExpenses = state.expenses.map(item => ({
         id: item.id,
         amount: item.amount,
@@ -1143,7 +1177,7 @@ async function pushDataToSupabase() {
         status: item.status,
         notes: item.notes || null,
         event: item.event || null,
-        user_id: state.userSession.id
+        user_id: effectiveUserId
     }));
 
     const dbDeposits = state.deposits.map(item => ({
@@ -1152,11 +1186,11 @@ async function pushDataToSupabase() {
         source: item.source,
         date: item.date,
         event: item.event || null,
-        user_id: state.userSession.id
+        user_id: effectiveUserId
     }));
 
     const dbSettings = [
-        { key: 'currencyCode', value: state.currencyCode }
+        { key: 'currencyCode', value: state.currencyCode, user_id: effectiveUserId }
     ];
 
     try {
@@ -1193,7 +1227,7 @@ async function pushDataToSupabase() {
             console.warn('Failed to push settings to Supabase:', e);
         }
 
-        updateSyncStatus('green', 'Synced with Supabase');
+        updateSyncStatus('green', state.sharedOwnerId ? 'Synced (Shared Account)' : 'Synced with Supabase');
         return true;
     } catch (e) {
         console.error('Network error writing to Supabase:', e);
@@ -1207,6 +1241,7 @@ async function deleteFromSupabase(id, type) {
     if (state.supabaseConfig.mode !== 'supabase' || !state.userSession) return;
 
     const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const effectiveUserId = getEffectiveUserId();
     const headers = {
         'apikey': SUPABASE_ANON_KEY,
         'Authorization': `Bearer ${state.userSession.accessToken}`
@@ -1214,7 +1249,8 @@ async function deleteFromSupabase(id, type) {
 
     const table = type === 'deposit' ? 'deposits' : 'expenses';
     try {
-        const res = await fetch(`${baseUrl}/rest/v1/${table}?id=eq.${id}`, {
+        // Filter by both id AND effective user_id to ensure correct record is deleted
+        const res = await fetch(`${baseUrl}/rest/v1/${table}?id=eq.${id}&user_id=eq.${effectiveUserId}`, {
             method: 'DELETE',
             headers
         });
@@ -1225,6 +1261,159 @@ async function deleteFromSupabase(id, type) {
         console.error(`Error deleting transaction ${id} from Supabase:`, e);
     }
 }
+
+// --- Shared Account Management ---
+
+async function checkSharedAccess() {
+    if (!state.userSession) return;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`,
+        'Accept': 'application/json'
+    };
+
+    try {
+        const email = encodeURIComponent(state.userSession.email.toLowerCase());
+        const res = await fetch(
+            `${baseUrl}/rest/v1/shared_access?shared_with_email=ilike.${email}&select=owner_id,owner_email`,
+            { method: 'GET', headers }
+        );
+        if (res.ok) {
+            const data = await res.json();
+            if (data.length > 0) {
+                const record = data[0];
+                state.sharedOwnerId = record.owner_id;
+                // Persist in session for page reloads
+                state.userSession.sharedOwnerId = record.owner_id;
+                state.userSession.sharedOwnerEmail = record.owner_email || 'Shared Account';
+                saveAuthSession(state.userSession);
+                showToast(`Viewing shared account: ${record.owner_email || 'Shared Account'}`, 'info');
+            } else {
+                // Not a shared user — clear any old shared state
+                state.sharedOwnerId = null;
+                if (state.userSession) {
+                    delete state.userSession.sharedOwnerId;
+                    delete state.userSession.sharedOwnerEmail;
+                    saveAuthSession(state.userSession);
+                }
+            }
+        }
+    } catch(e) {
+        console.warn('Could not check shared access:', e);
+    }
+    checkAuthRouting();
+}
+
+async function getSharedUsers() {
+    if (!state.userSession || state.sharedOwnerId) return []; // Shared users can't manage shares
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`,
+        'Accept': 'application/json'
+    };
+    try {
+        const res = await fetch(`${baseUrl}/rest/v1/shared_access?owner_id=eq.${state.userSession.id}&select=id,shared_with_email,created_at`, { method: 'GET', headers });
+        if (res.ok) return await res.json();
+    } catch(e) { console.warn('Failed to fetch shared users:', e); }
+    return [];
+}
+
+async function addSharedUser(email) {
+    if (!state.userSession || !email || state.sharedOwnerId) return false;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+    };
+    try {
+        const res = await fetch(`${baseUrl}/rest/v1/shared_access`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                owner_id: state.userSession.id,
+                owner_email: state.userSession.email,
+                shared_with_email: email.toLowerCase().trim()
+            })
+        });
+        if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            // Duplicate entry is OK
+            if (res.status === 409 || (errData.code && errData.code === '23505')) {
+                showToast('This email is already added.', 'warning');
+                return false;
+            }
+            throw new Error(errData.message || `HTTP ${res.status}`);
+        }
+        return true;
+    } catch(e) {
+        console.error('Failed to add shared user:', e);
+        showToast(`Failed to add user: ${e.message}`, 'error');
+        return false;
+    }
+}
+
+async function removeSharedUser(recordId) {
+    if (!state.userSession || state.sharedOwnerId) return false;
+    const baseUrl = SUPABASE_URL.replace(/\/+$/, '');
+    const headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${state.userSession.accessToken}`
+    };
+    try {
+        const res = await fetch(`${baseUrl}/rest/v1/shared_access?id=eq.${recordId}&owner_id=eq.${state.userSession.id}`, {
+            method: 'DELETE',
+            headers
+        });
+        return res.ok;
+    } catch(e) {
+        console.error('Failed to remove shared user:', e);
+        return false;
+    }
+}
+
+async function renderSharedAccessList() {
+    const container = document.getElementById('shared-users-list');
+    const addSection = document.getElementById('share-access-section');
+    if (!container) return;
+
+    // Hide sharing management entirely if the current user is themselves a shared member
+    if (state.sharedOwnerId) {
+        if (addSection) addSection.style.display = 'none';
+        return;
+    }
+    if (addSection) addSection.style.display = 'block';
+
+    container.innerHTML = '<p style="color:var(--text-secondary);font-size:0.85rem;">Loading...</p>';
+    const users = await getSharedUsers();
+    if (users.length === 0) {
+        container.innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;font-style:italic;">No one has access yet. Add your wife\'s email above.</p>';
+        return;
+    }
+    container.innerHTML = users.map(u => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.8rem;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.15);border-radius:8px;margin-bottom:0.5rem;">
+            <div style="display:flex;align-items:center;gap:0.5rem;">
+                <i class="fa-solid fa-user-group" style="color:#6366f1;font-size:0.85rem;"></i>
+                <span style="font-size:0.875rem;font-weight:500;color:var(--text-primary);">${u.shared_with_email}</span>
+            </div>
+            <button onclick="handleRemoveSharedUser('${u.id}')" style="background:rgba(244,63,94,0.08);border:1px solid rgba(244,63,94,0.2);color:#f43f5e;border-radius:6px;padding:0.3rem 0.6rem;cursor:pointer;font-size:0.8rem;" title="Remove access">
+                <i class="fa-solid fa-xmark"></i> Remove
+            </button>
+        </div>
+    `).join('');
+}
+
+window.handleRemoveSharedUser = async function(recordId) {
+    if (!confirm('Remove this person\'s access to your account?')) return;
+    const ok = await removeSharedUser(recordId);
+    if (ok) {
+        showToast('Access removed.', 'success');
+        renderSharedAccessList();
+    }
+};
 
 // --- Helper Utilities for Data Merging ---
 function mergeTransactionLists(listA, listB) {
@@ -1632,6 +1821,30 @@ function openModal(modalEl) {
     }
     if (modalEl.id === 'modal-settings') {
         document.getElementById('currency-select').value = state.currencyCode || 'INR';
+        // Load shared access list when settings opens
+        renderSharedAccessList();
+        // Wire up add shared user form
+        const addShareForm = document.getElementById('form-add-shared-user');
+        if (addShareForm && !addShareForm.dataset.bound) {
+            addShareForm.dataset.bound = 'true';
+            addShareForm.addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                const emailInput = document.getElementById('shared-user-email');
+                const email = emailInput.value.trim();
+                if (!email) return;
+                const btn = addShareForm.querySelector('button[type=submit]');
+                btn.disabled = true;
+                btn.textContent = 'Adding...';
+                const ok = await addSharedUser(email);
+                btn.disabled = false;
+                btn.textContent = 'Add';
+                if (ok) {
+                    emailInput.value = '';
+                    showToast(`Access granted to ${email}`, 'success');
+                    renderSharedAccessList();
+                }
+            });
+        }
     }
 }
 
