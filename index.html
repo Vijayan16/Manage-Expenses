@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovaSpend — Premium Expenses Dashboard</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Premium Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo">
+                <i class="fa-solid fa-compass-drafting logo-icon"></i>
+                <span class="logo-text">NovaSpend</span>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" id="nav-dashboard">
+                    <i class="fa-solid fa-chart-pie"></i> Dashboard
+                </a>
+                <a href="#" class="nav-item" id="nav-ledger">
+                    <i class="fa-solid fa-list-check"></i> Transactions
+                </a>
+                <a href="#" class="nav-item" id="nav-analytics">
+                    <i class="fa-solid fa-chart-line"></i> Analytics
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="btn btn-settings" id="btn-settings-trigger">
+                    <i class="fa-solid fa-sliders"></i> Sync Settings
+                </button>
+                <div class="sync-status-indicator" id="sync-indicator">
+                    <span class="pulse-dot grey"></span>
+                    <span class="status-text">Local Storage Only</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Dashboard Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-title-area">
+                    <h1>Financial Dashboard</h1>
+                    <p class="current-date" id="header-date">Saturday, May 23, 2026</p>
+                </div>
+                
+                <div class="header-actions">
+                    <button class="btn btn-primary" id="btn-add-cash-trigger">
+                        <i class="fa-solid fa-circle-plus"></i> Add Cash
+                    </button>
+                    <button class="btn btn-accent" id="btn-add-expense-trigger">
+                        <i class="fa-solid fa-receipt"></i> Log Expense
+                    </button>
+                </div>
+            </header>
+
+            <!-- Metrics Panel -->
+            <section class="metrics-grid">
+                <!-- Card 1: Cash in Hand -->
+                <div class="metric-card card-emerald">
+                    <div class="card-glow"></div>
+                    <div class="card-header">
+                        <span class="card-title">Cash in Hand</span>
+                        <div class="card-icon"><i class="fa-solid fa-wallet"></i></div>
+                    </div>
+                    <div class="card-value" id="val-cash-hand">£0.00</div>
+                    <div class="card-footer">
+                        <span class="trend-indicator up"><i class="fa-solid fa-angle-up"></i> Available Balance</span>
+                    </div>
+                </div>
+
+                <!-- Card 2: Total Expenses -->
+                <div class="metric-card card-blue">
+                    <div class="card-glow"></div>
+                    <div class="card-header">
+                        <span class="card-title">Total Expenses</span>
+                        <div class="card-icon"><i class="fa-solid fa-chart-line-down"></i></div>
+                    </div>
+                    <div class="card-value" id="val-expenses-total">£0.00</div>
+                    <div class="card-footer">
+                        <span class="trend-indicator text-muted" id="val-expenses-count">0 recorded items</span>
+                    </div>
+                </div>
+
+                <!-- Card 3: Deposits Paid -->
+                <div class="metric-card card-violet">
+                    <div class="card-glow"></div>
+                    <div class="card-header">
+                        <span class="card-title">Total Deposits</span>
+                        <div class="card-icon"><i class="fa-solid fa-money-bill-transfer"></i></div>
+                    </div>
+                    <div class="card-value" id="val-deposits-total">£0.00</div>
+                    <div class="card-footer">
+                        <span class="trend-indicator up" id="val-deposits-count">0 deposits</span>
+                    </div>
+                </div>
+
+                <!-- Card 4: Outstanding Expenses -->
+                <div class="metric-card card-amber">
+                    <div class="card-glow"></div>
+                    <div class="card-header">
+                        <span class="card-title">Outstanding / Unpaid</span>
+                        <div class="card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
+                    </div>
+                    <div class="card-value" id="val-outstanding-total">£0.00</div>
+                    <div class="card-footer">
+                        <span class="trend-indicator warning" id="val-outstanding-count">0 items pending</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Content Grid -->
+            <div class="dashboard-grid">
+                <!-- Charts Area (Right) -->
+                <div class="dashboard-card chart-container-card">
+                    <div class="card-title-bar">
+                        <h3>Spending Analytics</h3>
+                        <div class="chart-toggles">
+                            <button class="chart-tab active" data-chart="category">Categories</button>
+                            <button class="chart-tab" data-chart="trend">Monthly Trend</button>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="categoryChart"></canvas>
+                        <canvas id="trendChart" style="display: none;"></canvas>
+                    </div>
+                </div>
+
+                <!-- Category Progress Bars / Breakdown -->
+                <div class="dashboard-card summary-card">
+                    <div class="card-title-bar">
+                        <h3>Top Categories</h3>
+                    </div>
+                    <div class="category-bars-list" id="category-progress-list">
+                        <!-- Progress bars injected via JS -->
+                        <div class="no-data-msg">No transactions registered yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ledger Section -->
+            <section class="ledger-section dashboard-card">
+                <div class="card-title-bar">
+                    <h3>Recent Transactions</h3>
+                    <div class="ledger-filters">
+                        <div class="search-box">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="text" id="ledger-search" placeholder="Search by recipient or note...">
+                        </div>
+                        <select id="filter-category" class="filter-select">
+                            <option value="all">All Categories</option>
+                            <option value="Food">Food</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Paying to someone">Paying to someone</option>
+                            <option value="Other">Other</option>
+                            <option value="Deposit">Deposits</option>
+                        </select>
+                        <select id="filter-event" class="filter-select">
+                            <option value="all">All Events</option>
+                        </select>
+                        <select id="filter-status" class="filter-select">
+                            <option value="all">All Statuses</option>
+                            <option value="paid">Paid</option>
+                            <option value="outstanding">Outstanding</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="ledger-table">
+                        <thead>
+                            <tr>
+                                <th>Transaction</th>
+                                <th>Category</th>
+                                <th>Payee / Source</th>
+                                <th>Date</th>
+                                <th>Status</th>
+                                <th class="text-right">Amount</th>
+                                <th class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ledger-body">
+                            <!-- Rows injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Modal: Add Cash -->
+    <div class="modal-overlay" id="modal-add-cash">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Add Cash / Deposit</h2>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-add-cash">
+                <div class="form-group">
+                    <label for="cash-amount">Amount (£)</label>
+                    <input type="number" step="0.01" min="0.01" id="cash-amount" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="cash-source">Source / Reference</label>
+                    <input type="text" id="cash-source" placeholder="Salary, Gift, Transfer from..." required>
+                </div>
+                <div class="form-group">
+                    <label for="cash-event">Event / Budget Allocation (Optional)</label>
+                    <input type="text" id="cash-event" placeholder="e.g. Vacation, Office Rent" list="events-list">
+                </div>
+                <div class="form-group">
+                    <label for="cash-date">Date Received</label>
+                    <input type="date" id="cash-date" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Cash</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Log Expense -->
+    <div class="modal-overlay" id="modal-add-expense">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Log New Expense</h2>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-add-expense">
+                <div class="form-group">
+                    <label for="expense-amount">Amount (£)</label>
+                    <input type="number" step="0.01" min="0.01" id="expense-amount" placeholder="0.00" required>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="expense-category">Category</label>
+                        <select id="expense-category" required>
+                            <option value="Food">Food</option>
+                            <option value="Transport">Transport</option>
+                            <option value="Shopping">Shopping</option>
+                            <option value="Utilities">Utilities</option>
+                            <option value="Entertainment">Entertainment</option>
+                            <option value="Paying to someone">Paying to someone</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-payee">Payee / Recipient</label>
+                        <input type="text" id="expense-payee" placeholder="e.g. Tesco, John Doe, Uber" required>
+                    </div>
+                </div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="expense-date">Date</label>
+                        <input type="date" id="expense-date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-status">Payment Status</label>
+                        <select id="expense-status" required>
+                            <option value="paid">Paid</option>
+                            <option value="outstanding">Outstanding / Unpaid</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="expense-event">Event / Trip Name (Optional)</label>
+                    <input type="text" id="expense-event" placeholder="e.g. Trip to Paris, London Trip" list="events-list">
+                </div>
+                <div class="form-group">
+                    <label for="expense-notes">Notes (Optional)</label>
+                    <textarea id="expense-notes" rows="2" placeholder="Add receipt details or details..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-accent">Log Expense</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: GitHub Sync Settings -->
+    <div class="modal-overlay" id="modal-settings">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>GitHub Synchronization Settings</h2>
+                <button class="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-info-box">
+                <i class="fa-solid fa-circle-info"></i>
+                <p>Sync your dashboard with your GitHub repository. It reads and writes data automatically to a JSON file, keeping your data up-to-date across users and devices without a server.</p>
+            </div>
+            <form id="form-settings">
+                <div class="form-group">
+                    <label for="sync-mode">Persistence Mode</label>
+                    <select id="sync-mode">
+                        <option value="local">Local Browser Storage Only</option>
+                        <option value="github">GitHub Sync Repository</option>
+                    </select>
+                </div>
+                
+                <div id="github-config-fields" style="display: none;">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="gh-username">GitHub Username</label>
+                            <input type="text" id="gh-username" placeholder="e.g. Vijayan16">
+                        </div>
+                        <div class="form-group">
+                            <label for="gh-repo">Repository Name</label>
+                            <input type="text" id="gh-repo" placeholder="e.g. Manage-Expenses">
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="gh-branch">Branch</label>
+                            <input type="text" id="gh-branch" placeholder="main" value="main">
+                        </div>
+                        <div class="form-group">
+                            <label for="gh-path">Data File Path</label>
+                            <input type="text" id="gh-path" placeholder="expenses.json" value="expenses.json">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="gh-token">Personal Access Token (PAT)</label>
+                        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxx">
+                        <small class="form-help-text">Requires <code>repo</code> write scopes (classic) or Contents write access (fine-grained).</small>
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary btn-cancel">Cancel</button>
+                    <button type="button" class="btn btn-info" id="btn-test-sync" style="display: none;">
+                        <i class="fa-solid fa-cloud-arrow-down"></i> Test Sync
+                    </button>
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </div>
+            </form>
+
+            <hr class="modal-divider">
+
+            <div class="backup-section">
+                <h3>Manual Backup</h3>
+                <div class="backup-buttons">
+                    <button class="btn btn-outline" id="btn-export-data">
+                        <i class="fa-solid fa-download"></i> Export Data (JSON)
+                    </button>
+                    <button class="btn btn-outline" id="btn-import-data-trigger">
+                        <i class="fa-solid fa-upload"></i> Import Data (JSON)
+                    </button>
+                    <input type="file" id="import-data-file" accept=".json" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Dynamic Event Autocomplete Datalist -->
+    <datalist id="events-list"></datalist>
+
+    <script src="app.js"></script>
+</body>
+</html>
