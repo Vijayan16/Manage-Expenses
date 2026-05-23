@@ -1117,11 +1117,18 @@ function setupEventListeners() {
 
     // Test GitHub Connection button
     document.getElementById('btn-test-sync').addEventListener('click', () => {
-        const username = document.getElementById('gh-username').value.trim();
-        const repo = document.getElementById('gh-repo').value.trim();
-        const branch = document.getElementById('gh-branch').value.trim() || 'main';
-        const filePath = document.getElementById('gh-path').value.trim() || 'expenses.json';
+        // Sanitize leading/trailing slashes and whitespaces
+        const username = document.getElementById('gh-username').value.trim().replace(/^\/+|\/+$/g, '');
+        const repo = document.getElementById('gh-repo').value.trim().replace(/^\/+|\/+$/g, '');
+        const branch = (document.getElementById('gh-branch').value.trim() || 'main').replace(/^\/+|\/+$/g, '');
+        const filePath = (document.getElementById('gh-path').value.trim() || 'expenses.json').replace(/^\/+|\/+$/g, '');
         const token = document.getElementById('gh-token').value.trim();
+
+        // Write cleaned values back to inputs
+        document.getElementById('gh-username').value = username;
+        document.getElementById('gh-repo').value = repo;
+        document.getElementById('gh-branch').value = branch;
+        document.getElementById('gh-path').value = filePath;
 
         if (!username || !repo || !token) {
             showToast('Please fill Username, Repo, and Access Token first.', 'warning');
@@ -1148,9 +1155,26 @@ function setupEventListeners() {
             .catch(err => {
                 console.error(err);
                 showToast('Connection error.', 'error');
+                // Restore original
                 state.githubConfig = originalConfig;
             });
     });
+
+    // Toggle PAT field visibility (show/hide password)
+    const btnToggleToken = document.getElementById('btn-toggle-token');
+    if (btnToggleToken) {
+        btnToggleToken.addEventListener('click', () => {
+            const tokenInput = document.getElementById('gh-token');
+            const icon = btnToggleToken.querySelector('i');
+            if (tokenInput.type === 'password') {
+                tokenInput.type = 'text';
+                icon.className = 'fa-solid fa-eye-slash';
+            } else {
+                tokenInput.type = 'password';
+                icon.className = 'fa-solid fa-eye';
+            }
+        });
+    }
 
     // Chart tabs / toggles
     const chartTabs = document.querySelectorAll('.chart-tab');

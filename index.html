@@ -349,8 +349,13 @@
                     </div>
                     <div class="form-group">
                         <label for="gh-token">Personal Access Token (PAT)</label>
-                        <input type="password" id="gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxx">
-                        <small class="form-help-text">Requires <code>repo</code> write scopes (classic) or Contents write access (fine-grained).</small>
+                        <div style="position: relative; display: flex; align-items: center;">
+                            <input type="password" id="gh-token" placeholder="github_pat_..." autocomplete="new-password" style="padding-right: 2.5rem; width: 100%;">
+                            <button type="button" id="btn-toggle-token" style="position: absolute; right: 0.75rem; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
+                                <i class="fa-solid fa-eye"></i>
+                            </button>
+                        </div>
+                        <small class="form-help-text">Requires Contents write access (fine-grained) or <code>repo</code> write scope (classic).</small>
                     </div>
                 </div>
 
